@@ -53,6 +53,10 @@ public class AlignedPlayerList extends PlayerList {
         return widths;
     }
 
+    public void setWidths(char c, byte width){
+        this.widths[c] = width;
+    }
+
     @Override
     public void load() {
         for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
