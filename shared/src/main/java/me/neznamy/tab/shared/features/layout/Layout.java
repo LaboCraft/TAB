@@ -70,7 +70,7 @@ public class Layout extends TabFeature {
     }
 
     public void tick() {
-        List<TabPlayer> players = manager.getSortedPlayers().keySet().stream().filter(player -> !player.isVanished()).collect(Collectors.toList());
+        List<TabPlayer> players = new ArrayList<>(manager.getSortedPlayers().keySet());
         for (ParentGroup group : groups) {
             group.tick(players);
         }

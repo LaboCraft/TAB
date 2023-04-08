@@ -87,7 +87,7 @@ public class LayoutManager extends TabFeature {
                             positions.add(i);
                         }
                     }
-                    parentGroups.add(new ParentGroup(l, condition, positions.stream().mapToInt(i->i).toArray()));
+                    parentGroups.add(new ParentGroup(l, condition, positions.stream().mapToInt(i->i).toArray(), (Boolean)group.getValue().getOrDefault("hide-vanished-players", true)));
                     emptySlots.removeAll(positions);
                 }
             }

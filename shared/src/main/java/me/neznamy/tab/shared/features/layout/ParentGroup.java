@@ -14,8 +14,9 @@ public class ParentGroup {
     private final int[] slots;
     private final Map<Integer, PlayerSlot> playerSlots = new HashMap<>();
     private final Map<TabPlayer, PlayerSlot> players = new HashMap<>();
+    private final boolean hideVanishedPlayers;
 
-    public ParentGroup(Layout layout, Condition condition, int[] slots) {
+    public ParentGroup(Layout layout, Condition condition, int[] slots, boolean hideVanishedPlayers) {
         this.layout = layout;
         this.condition = condition;
         if (condition != null) {
@@ -25,13 +26,14 @@ public class ParentGroup {
         for (int slot : slots) {
             playerSlots.put(slot, new PlayerSlot(layout, layout.getManager().getUUID(slot)));
         }
+        this.hideVanishedPlayers = hideVanishedPlayers;
     }
 
     public void tick(List<TabPlayer> remainingPlayers){
         players.clear();
         List<TabPlayer> meetingCondition = new ArrayList<>();
         for (TabPlayer p : remainingPlayers) {
-            if (condition == null || condition.isMet(p)) meetingCondition.add(p);
+            if ((condition == null || condition.isMet(p)) && (!hideVanishedPlayers || !p.isVanished())) meetingCondition.add(p);
         }
         remainingPlayers.removeAll(meetingCondition);
         for (int index = 0; index < slots.length; index++) {
