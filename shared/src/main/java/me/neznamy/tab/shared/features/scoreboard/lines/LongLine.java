@@ -2,14 +2,14 @@ package me.neznamy.tab.shared.features.scoreboard.lines;
 
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.chat.rgb.RGBUtils;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardTeam;
 import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.api.feature.Refreshable;
 import me.neznamy.tab.shared.features.scoreboard.ScoreboardImpl;
 
 /**
  * Line using all 3 values - prefix, name and suffix. Line may flicker when placeholder changes value.
  */
-public class LongLine extends ScoreboardLine {
+public class LongLine extends ScoreboardLine implements Refreshable {
 
     private final String textProperty;
     private final String nameProperty;
@@ -36,8 +36,8 @@ public class LongLine extends ScoreboardLine {
         if (!parent.getPlayers().contains(refreshed)) return; //player has different scoreboard displayed
         if (refreshed.getProperty(textProperty).update()) {
             if (refreshed.getVersion().getMinorVersion() >= 13) {
-                refreshed.sendCustomPacket(new PacketPlayOutScoreboardTeam(teamName, refreshed.getProperty(textProperty).get(),
-                        "", "always", "always", 0), TabConstants.PacketCategory.SCOREBOARD_LINES);
+                refreshed.getScoreboard().updateTeam(teamName, refreshed.getProperty(textProperty).get(),
+                        "", "always", "always", 0);
             } else {
                 removeLine(refreshed, refreshed.getProperty(nameProperty).get());
                 String[] values = splitText(getPlayerName(lineNumber), RGBUtils.getInstance().convertRGBtoLegacy(refreshed.getProperty(textProperty).get()), refreshed.getVersion().getMinorVersion() >= 8 ? 40 : 16);

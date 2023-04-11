@@ -13,7 +13,7 @@ import me.neznamy.tab.shared.features.scoreboard.ScoreboardManagerImpl;
 
 /**
  * Handler for "/tab scoreboard [on/off/toggle] [player] [options]" subcommand
- * and "/tab scoreboard show <name> [player]"
+ * and "/tab scoreboard show &lt;name&gt; [player]"
  */
 public class ScoreboardCommand extends SubCommand {
 
@@ -90,7 +90,7 @@ public class ScoreboardCommand extends SubCommand {
                 return;
             }
             if (sender == null) {
-                sendMessage(sender, getMessages().getCommandOnlyFromGame());
+                TAB.getInstance().sendConsoleMessage(getMessages().getCommandOnlyFromGame(), true);
                 return;
             }
             target = sender;

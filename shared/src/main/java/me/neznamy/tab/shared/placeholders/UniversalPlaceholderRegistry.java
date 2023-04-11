@@ -27,7 +27,6 @@ public class UniversalPlaceholderRegistry implements PlaceholderRegistry {
     @Override
     public void registerPlaceholders(PlaceholderManager manager) {
         manager.registerServerPlaceholder("%%", -1, () -> "%");
-        manager.registerPlayerPlaceholder(TabConstants.Placeholder.GROUP, -1, TabPlayer::getGroup);
         manager.registerPlayerPlaceholder(TabConstants.Placeholder.VANISHED, 1000, TabPlayer::isVanished);
         manager.registerPlayerPlaceholder(TabConstants.Placeholder.WORLD, -1, TabPlayer::getWorld);
         manager.registerPlayerPlaceholder(TabConstants.Placeholder.WORLD_ONLINE, 1000, p -> Arrays.stream(TAB.getInstance().getOnlinePlayers()).filter(all -> p.getWorld().equals(all.getWorld()) && !all.isVanished()).count());
@@ -53,6 +52,9 @@ public class UniversalPlaceholderRegistry implements PlaceholderRegistry {
         if (plugin instanceof LuckPerms) {
             manager.registerPlayerPlaceholder(TabConstants.Placeholder.LUCKPERMS_PREFIX, 1000, ((LuckPerms)plugin)::getPrefix);
             manager.registerPlayerPlaceholder(TabConstants.Placeholder.LUCKPERMS_SUFFIX, 1000, ((LuckPerms)plugin)::getSuffix);
+        } else {
+            manager.registerServerPlaceholder(TabConstants.Placeholder.LUCKPERMS_PREFIX, -1, () -> "");
+            manager.registerServerPlaceholder(TabConstants.Placeholder.LUCKPERMS_SUFFIX, -1, () -> "");
         }
         for (Object s : TAB.getInstance().getConfiguration().getAnimationFile().getValues().keySet()) {
             Animation a = new Animation(s.toString(), TAB.getInstance().getConfiguration().getAnimationFile().getStringList(s + ".texts"),
@@ -76,6 +78,22 @@ public class UniversalPlaceholderRegistry implements PlaceholderRegistry {
             Condition c = new Condition(!"OR".equals(type), condition.getKey(), list, yes, no);
             manager.registerPlayerPlaceholder(TabConstants.Placeholder.condition(c.getName()), c.getRefresh(), c::getText);
         }
+        Condition.finishSetups();
+    }
+
+    public String format(double value) {
+        return decimal2.format(value);
+    }
+
+    /**
+     * Formats TPS using number formatter with 2 decimal places.
+     *
+     * @param   tps
+     *          TPS to format
+     * @return  Formatted TPS as a String
+     */
+    public String formatTPS(double tps) {
+        return decimal2.format(Math.min(20, tps));
     }
     
     /**

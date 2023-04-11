@@ -1,12 +1,13 @@
 package me.neznamy.tab.platforms.bukkit.features;
 
+import lombok.Getter;
 import me.clip.placeholderapi.PlaceholderAPI;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import me.neznamy.tab.api.TabAPI;
 import me.neznamy.tab.api.TabConstants;
-import me.neznamy.tab.api.TabFeature;
 import me.neznamy.tab.api.TabPlayer;
-import me.neznamy.tab.shared.features.TabExpansion;
+import me.neznamy.tab.shared.TAB;
+import me.neznamy.tab.shared.placeholders.expansion.TabExpansion;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
@@ -19,47 +20,40 @@ import java.util.WeakHashMap;
  */
 public class BukkitTabExpansion extends PlaceholderExpansion implements TabExpansion {
 
-    /** Map holding all placeholder values for all players */
-    private final Map<TabPlayer, Map<String, String>> values = new WeakHashMap<>();
+    /** Map holding all values for all players for easy and high-performance access */
+    private final WeakHashMap<Player, Map<String, String>> values = new WeakHashMap<>();
+
+    @Getter private final String author = TabConstants.PLUGIN_AUTHOR;
+    @Getter private final String identifier = TabConstants.PLUGIN_ID;
+    @Getter private final String version = TabConstants.PLUGIN_VERSION;
 
     @Override
-    public boolean persist(){
+    public boolean persist() {
         return true;
     }
 
     @Override
-    public @NotNull String getAuthor(){
-        return "NEZNAMY";
-    }
-
-    @Override
-    public @NotNull String getIdentifier(){
-        return "tab";
-    }
-
-    @Override
-    public @NotNull String getVersion() {
-        return TabConstants.PLUGIN_VERSION;
-    }
-
-    @Override
-    public String onPlaceholderRequest(Player player, @NotNull String identifier){
+    public String onPlaceholderRequest(Player player, @NotNull String identifier) {
         if (identifier.startsWith("replace_")) {
-            String placeholder = "%" + identifier.substring(8) + "%";
-            String output = PlaceholderAPI.setPlaceholders(player, placeholder);
-            return TabAPI.getInstance().getPlaceholderManager().findReplacement(placeholder, output);
+            String text = "%" + identifier.substring(8) + "%";
+            String textBefore;
+            do {
+                textBefore = text;
+                for (String placeholder : TAB.getInstance().getPlaceholderManager().detectPlaceholders(text)) {
+                    text = text.replace(placeholder, TabAPI.getInstance().getPlaceholderManager().findReplacement(placeholder,
+                            PlaceholderAPI.setPlaceholders(player, placeholder)));
+                }
+            } while (!textBefore.equals(text));
+            return text;
         }
         if (identifier.startsWith("placeholder_")) {
-            TabAPI.getInstance().getPlaceholderManager().addUsedPlaceholder("%" + identifier.substring(12) + "%", (TabFeature) TabAPI.getInstance().getPlaceholderManager());
+            TabAPI.getInstance().getPlaceholderManager().addUsedPlaceholder("%" + identifier.substring(12) + "%", TabAPI.getInstance().getPlaceholderManager());
         }
-        if (player == null) return "<Player cannot be null>";
-        TabPlayer p = TabAPI.getInstance().getPlayer(player.getUniqueId());
-        if (p == null || !p.isLoaded()) return "<Player is not loaded>";
-        return values.get(p).get(identifier);
+        return values.get(player).get(identifier);
     }
 
     @Override
     public void setValue(TabPlayer player, String key, String value) {
-        values.computeIfAbsent(player, p -> new HashMap<>()).put(key, value);
+        values.computeIfAbsent((Player) player.getPlayer(), p -> new HashMap<>()).put(key, value);
     }
 }

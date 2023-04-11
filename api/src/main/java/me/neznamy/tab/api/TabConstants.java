@@ -1,26 +1,33 @@
 package me.neznamy.tab.api;
 
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
+
 /**
  * A class containing various constants used everywhere in the plugin
  * to allow easier overview and modification to prevent inconsistencies.
  */
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class TabConstants {
 
-    public static final String PLUGIN_VERSION = "@plugin_version@";
+    public static final String PLUGIN_NAME = "@name@";
+    public static final String PLUGIN_ID = "@id@";
+    public static final String PLUGIN_VERSION = "@version@";
+    public static final String PLUGIN_DESCRIPTION = "@description@";
+    public static final String PLUGIN_WEBSITE = "@website@";
+    public static final String PLUGIN_AUTHOR = "@author@";
+
     public static final String NO_GROUP = "NONE";
     public static final String DEFAULT_GROUP = "_DEFAULT_";
     public static final String PLUGIN_MESSAGE_CHANNEL_NAME = "tab:bridge-2";
-    public static final String REDIS_CHANNEL_NAME = "TAB";
-
-    /**
-     * Private constructor to prevent the class from being instantiated
-     */
-    private TabConstants() {}
+    public static final String REDIS_CHANNEL_NAME = PLUGIN_NAME;
+    public static final String PIPELINE_HANDLER_NAME = PLUGIN_NAME;
 
     /**
      * Feature sub-category explaining why / when a certain feature
      * needed CPU time to process tasks.
      */
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
     public static class CpuUsageCategory {
 
         public static final String PLAYER_JOIN = "Player Join";
@@ -54,54 +61,12 @@ public class TabConstants {
         public static final String SCOREBOARD_PACKET_CHECK = "Checking for other plugins";
         public static final String PROCESSING_PLAYER_MOVEMENT = "Processing player movement";
         public static final String TELEPORTING_WITHER = "Teleporting wither";
-
-        /**
-         * Private constructor to prevent the class from being instantiated
-         */
-        private CpuUsageCategory() {}
-    }
-
-    /**
-     * Information why a specific feature sent a packet
-     * and what the packet sent is supposed to do.
-     */
-    public static class PacketCategory {
-
-        public static final String BOSSBAR_COLOR_STYLE = "BossBar (Color and style)";
-        public static final String BOSSBAR_PROGRESS = "BossBar (Progress)";
-        public static final String BOSSBAR_TEXT = "BossBar (Text)";
-        public static final String BOSSBAR_WITHER_TELEPORT = "BossBar (Teleporting Wither)";
-
-        public static final String GLOBAL_PLAYERLIST_LATENCY = "Global PlayerList (Updating latency)";
-        public static final String GLOBAL_PLAYERLIST_VANISH = "Global PlayerList (Vanishing)";
-
-        public static final String LAYOUT_FIXED_SLOTS = "Layout (Fixed slots)";
-        public static final String LAYOUT_PLAYER_SLOTS = "Layout (Player slots)";
-        public static final String LAYOUT_LATENCY = "Layout (Updating latency)";
-
-        public static final String NAMETAGS_TEAM_REGISTER = "NameTags (Team register)";
-        public static final String NAMETAGS_TEAM_UNREGISTER = "NameTags (Team unregister)";
-        public static final String NAMETAGS_TEAM_UPDATE = "NameTags (Team update)";
-
-        public static final String SCOREBOARD_TITLE = "Scoreboard (Title)";
-        public static final String SCOREBOARD_LINES = "Scoreboard (Lines)";
-
-        public static final String UNLIMITED_NAMETAGS_OFFSET_CHANGE = "Unlimited NameTags (Changing offset)";
-        public static final String UNLIMITED_NAMETAGS_SPAWN = "Unlimited NameTags (Spawning)";
-        public static final String UNLIMITED_NAMETAGS_DESPAWN = "Unlimited NameTags (Despawning)";
-        public static final String UNLIMITED_NAMETAGS_TELEPORT = "Unlimited NameTags (Teleporting)";
-        public static final String UNLIMITED_NAMETAGS_SNEAK = "Unlimited NameTags (Sneaking)";
-        public static final String UNLIMITED_NAMETAGS_METADATA = "Unlimited NameTags (Metadata)";
-
-        /**
-         * Private constructor to prevent the class from being instantiated
-         */
-        private PacketCategory() {}
     }
 
     /**
      * Permission nodes used by the plugin
      */
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
     public static class Permission {
 
         public static final String COMMAND_ALL = "tab.admin";
@@ -116,7 +81,11 @@ public class TabConstants {
         public static final String COMMAND_MYSQL_DOWNLOAD = "tab.mysql.download";
         public static final String COMMAND_MYSQL_UPLOAD = "tab.mysql.upload";
         public static final String COMMAND_NAMETAG_TOGGLE = "tab.nametag.toggle";
+
+        public static final String COMMAND_NAMETAG_TOGGLE_OTHER = "tab.nametag.toggle.other";
         public static final String COMMAND_NAMETAG_PREVIEW = "tab.nametag.preview";
+
+        public static final String COMMAND_NAMETAG_PREVIEW_OTHER = "tab.nametag.preview.other";
         public static final String COMMAND_PARSE = "tab.parse";
         public static final String COMMAND_SCOREBOARD_ANNOUNCE = "tab.announce.scoreboard";
         public static final String COMMAND_SCOREBOARD_TOGGLE = "tab.scoreboard.toggle";
@@ -138,17 +107,13 @@ public class TabConstants {
         public static final String TEST_PERMISSION = "tab.testpermission";
 
         public static final String GROUP_PREFIX = "tab.group.";
-
-        /**
-         * Private constructor to prevent the class from being instantiated
-         */
-        private Permission(){}
     }
 
     /**
      * Internal property names used to store text
      * under a specific key
      */
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
     public static class Property {
 
         public static final String HEADER = "header";
@@ -172,11 +137,6 @@ public class TabConstants {
         public static final String BELOWNAME_TEXT = "belowname-text";
 
         public static final String YELLOW_NUMBER = "yellow-number";
-
-        /**
-         * Private constructor to prevent the class from being instantiated
-         */
-        private Property() {}
 
         public static String bossbarTitle(String name) {
             return "bossbar-title-" + name;
@@ -211,6 +171,7 @@ public class TabConstants {
      * Feature names used to register features under in the
      * feature manager which they can be retrieved by.
      */
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
     public static class Feature {
 
         //universal features
@@ -238,6 +199,7 @@ public class TabConstants {
         public static final String UNLIMITED_NAME_TAGS = "NameTagX";
         public static final String UNLIMITED_NAME_TAGS_PACKET_LISTENER = "nametagx-packet";
         public static final String UNLIMITED_NAME_TAGS_VEHICLE_REFRESHER = "nametagx-vehicle";
+        public static final String UNLIMITED_NAME_TAGS_GAMEMODE_LISTENER = "nametagx-gamemode";
 
         //Bukkit only
         public static final String PER_WORLD_PLAYER_LIST = "PerWorldPlayerList";
@@ -250,11 +212,6 @@ public class TabConstants {
         //additional info displayed in cpu command
         public static final String PACKET_SERIALIZING = "Packet serializing";
         public static final String PACKET_DESERIALIZING = "Packet deserializing";
-
-        /**
-         * Private constructor to prevent the class from being instantiated
-         */
-        private Feature(){}
 
         public static String scoreboardLine(String line) {
             return "scoreboard-" + line;
@@ -280,14 +237,19 @@ public class TabConstants {
             return "BossBar-progress-" + name;
         }
 
-        public static String bossBarColorStyle(String name) {
-            return "BossBar-color-style-" + name;
+        public static String bossBarColor(String color) {
+            return "BossBar-color-" + color;
+        }
+
+        public static String bossBarStyle(String style) {
+            return "BossBar-style-" + style;
         }
     }
 
     /**
      * All internal placeholders offered by the plugin
      */
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
     public static class Placeholder {
 
         // Universal
@@ -329,6 +291,8 @@ public class TabConstants {
         public static final String VAULT_SUFFIX = "%vault-suffix%";
         public static final String HEALTH = "%health%";
 
+        public static final int MINIMUM_REFRESH_INTERVAL = 50;
+
         public static String condition(String name) {
             return "%condition:" + name + "%";
         }
@@ -336,17 +300,23 @@ public class TabConstants {
         public static String animation(String name) {
             return "%animation:" + name + "%";
         }
+
+        public static String globalPlayerListGroup(String group) {
+            return "%playerlist-group_" + group + "%";
+        }
     }
 
     /**
      * All plugins TAB hooks into
      */
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
     public static class Plugin {
 
         public static final String LUCKPERMS = "LuckPerms";
         public static final String VAULT = "Vault";
         public static final String PLACEHOLDER_API = "PlaceholderAPI";
         public static final String LIBS_DISGUISES = "LibsDisguises";
+        public static final String VIAREWIND = "ViaRewind";
         public static final String VIAVERSION = "ViaVersion";
         public static final String PROTOCOL_SUPPORT = "ProtocolSupport";
         public static final String ESSENTIALS = "Essentials";
@@ -357,6 +327,7 @@ public class TabConstants {
     /**
      * TAB's custom metrics charts
      */
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
     public static class MetricsChart {
 
         public static final String PERMISSION_SYSTEM = "permission_system";

@@ -1,63 +1,43 @@
 package me.neznamy.tab.shared.features;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
-import me.neznamy.tab.api.TabConstants;
-import me.neznamy.tab.api.TabFeature;
+import lombok.Getter;
+import me.neznamy.tab.api.feature.*;
 import me.neznamy.tab.api.TabPlayer;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo.EnumPlayerInfoAction;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo.PlayerInfoData;
 import me.neznamy.tab.shared.TAB;
-import me.neznamy.tab.shared.features.layout.Layout;
-import me.neznamy.tab.shared.features.layout.LayoutManager;
-import me.neznamy.tab.shared.features.layout.ParentGroup;
-import me.neznamy.tab.shared.features.layout.PlayerSlot;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * Sets ping of all players in the packet to configured value to prevent hacked clients from seeing exact ping value of each player
  */
-public class PingSpoof extends TabFeature {
+public class PingSpoof extends TabFeature implements JoinListener, LatencyListener, Loadable, UnLoadable {
 
     //fake ping value
     private final int value = TAB.getInstance().getConfiguration().getConfig().getInt("ping-spoof.value", 0);
 
-    private LayoutManager layoutManager;
-
-    /**
-     * Constructs new instance and loads config options
-     */
-    public PingSpoof() {
-        super("Ping spoof", null);
-        TAB.getInstance().debug(String.format("Loaded PingSpoof feature with parameters value=%s", value));
-    }
+    @Getter private final String featureName = "Ping spoof";
 
     @Override
-    public void onPlayerInfo(TabPlayer receiver, PacketPlayOutPlayerInfo info) {
-        if (info.getAction() != EnumPlayerInfoAction.UPDATE_LATENCY && info.getAction() != EnumPlayerInfoAction.ADD_PLAYER) return;
-        for (PlayerInfoData playerInfoData : info.getEntries()) {
-            if (TAB.getInstance().getPlayerByTabListUUID(playerInfoData.getUniqueId()) != null) playerInfoData.setLatency(value);
-            if (layoutManager != null) {
-                Layout layout = layoutManager.getPlayerViews().get(receiver);
-                if (layout != null) {
-                    for (ParentGroup group : layout.getGroups()) {
-                        for (Map.Entry<Integer, PlayerSlot> entry : group.getPlayerSlots().entrySet()) {
-                            if (layoutManager.getUUID(entry.getKey()) == playerInfoData.getUniqueId() && entry.getValue().getPlayer() != null) {
-                                playerInfoData.setLatency(value);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    public int onLatencyChange(TabPlayer packetReceiver, UUID id, int latency) {
+        if (TAB.getInstance().getPlayerByTabListUUID(id) != null) return value;
+        return latency;
     }
 
     @Override
     public void load() {
-        layoutManager = (LayoutManager) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.LAYOUT);
         updateAll(false);
+    }
+
+    @Override
+    public void onJoin(TabPlayer p) {
+        Map<UUID, Integer> map = new HashMap<>();
+        for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
+            map.put(all.getUniqueId(), value);
+            all.getTabList().updateLatency(p.getTablistId(), value);
+        }
+        p.getTabList().updateLatencies(map);
     }
 
     @Override
@@ -66,12 +46,12 @@ public class PingSpoof extends TabFeature {
     }
 
     private void updateAll(boolean realPing) {
-        List<PlayerInfoData> list = new ArrayList<>();
+        Map<UUID, Integer> map = new HashMap<>();
         for (TabPlayer p : TAB.getInstance().getOnlinePlayers()) {
-            list.add(new PlayerInfoData(p.getUniqueId(), realPing ? p.getPing() : value));
+            map.put(p.getUniqueId(), realPing ? p.getPing() : value);
         }
         for (TabPlayer p : TAB.getInstance().getOnlinePlayers()) {
-            p.sendCustomPacket(new PacketPlayOutPlayerInfo(EnumPlayerInfoAction.UPDATE_LATENCY, list), this);
+            p.getTabList().updateLatencies(map);
         }
     }
 }

@@ -1,20 +1,20 @@
 package me.neznamy.tab.shared.proxy;
 
 import com.google.common.io.ByteArrayDataInput;
-import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
-import me.neznamy.tab.api.TabPlayer;
+import me.neznamy.tab.api.TabConstants;
 import me.neznamy.tab.api.placeholder.Placeholder;
 import me.neznamy.tab.api.placeholder.PlayerPlaceholder;
 import me.neznamy.tab.api.placeholder.RelationalPlaceholder;
 import me.neznamy.tab.api.placeholder.ServerPlaceholder;
-import me.neznamy.tab.api.util.Preconditions;
 import me.neznamy.tab.shared.TAB;
-import me.neznamy.tab.api.TabConstants;
 import me.neznamy.tab.shared.permission.VaultBridge;
 import me.neznamy.tab.shared.placeholders.PlayerPlaceholderImpl;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
 
 /**
  * Universal interface for proxy to manage plugin messages
@@ -29,14 +29,19 @@ public class PluginMessageHandler {
      * @param   bytes
      *          incoming message
      */
-    public void onPluginMessage(UUID uuid, byte[] bytes) {
+    @SuppressWarnings("UnstableApiUsage")
+    public void onPluginMessage(UUID uuid, String name, byte[] bytes) {
         TAB.getInstance().getCPUManager().runMeasuredTask("Plugin message handling",
                 TabConstants.CpuUsageCategory.PLUGIN_MESSAGE, () -> {
                     ProxyTabPlayer player = (ProxyTabPlayer) TAB.getInstance().getPlayer(uuid);
-                    if (player == null) return;
+                    if (player == null) {
+                        TAB.getInstance().getErrorManager().printError("Ignoring plugin message (" + new String(bytes) + ") for player " +
+                                name + ", because player was not found");
+                        return;
+                    }
                     ByteArrayDataInput in = ByteStreams.newDataInput(bytes);
                     String subChannel = in.readUTF();
-                    if ("Placeholder".equals(subChannel)){
+                    if ("Placeholder".equals(subChannel)) {
                         Placeholder placeholder = TAB.getInstance().getPlaceholderManager().getPlaceholder(in.readUTF());
                         if (placeholder instanceof RelationalPlaceholder) {
                             ((RelationalPlaceholder)placeholder).updateValue(player, TAB.getInstance().getPlayer(in.readUTF()), in.readUTF());
@@ -53,13 +58,13 @@ public class PluginMessageHandler {
                         player.setDisguised(in.readBoolean());
                     }
                     if ("Invisible".equals(subChannel)) {
-                        player.setInvisible(in.readBoolean());
+                        player.setInvisibilityPotion(in.readBoolean());
                     }
                     if ("World".equals(subChannel)) {
                         TAB.getInstance().getFeatureManager().onWorldChange(player.getUniqueId(), in.readUTF());
                     }
                     if ("Group".equals(subChannel)) {
-                        player.setGroup(in.readUTF());
+                        ((PlayerPlaceholder)TAB.getInstance().getPlaceholderManager().getPlaceholder(TabConstants.Placeholder.GROUP)).updateValue(player, in.readUTF());
                     }
                     if ("Boat".equals(subChannel)) {
                         player.setOnBoat(in.readBoolean());
@@ -74,7 +79,7 @@ public class PluginMessageHandler {
                         // reset attributes from previous server to default false values, new server will send separate update packets if needed
                         player.setVanished(false);
                         player.setDisguised(false);
-                        player.setInvisible(false);
+                        player.setInvisibilityPotion(false);
                         int placeholderCount = in.readInt();
                         for (int i=0; i<placeholderCount; i++) {
                             String identifier = in.readUTF();
@@ -107,44 +112,5 @@ public class PluginMessageHandler {
                         TAB.getInstance().getPlaceholderManager().addUsedPlaceholders(Collections.singletonList(in.readUTF()));
                     }
                 });
-    }
-
-    /**
-     * Sends plugin message to specified player
-     *
-     * @param   player
-     *          Player to send plugin message to
-     * @param   args
-     *          Messages to encode
-     */
-    public void sendMessage(TabPlayer player, Object... args) {
-//        System.out.println(player.getName() + ": " + Arrays.toString(args));
-        ByteArrayDataOutput out = ByteStreams.newDataOutput();
-        for (Object arg : args) {
-            writeObject(out, arg);
-        }
-        ((ProxyTabPlayer)player).sendPluginMessage(out.toByteArray());
-    }
-
-    /**
-     * Writes object to data input by calling proper write method
-     * based on data type of the object.
-     *
-     * @param   out
-     *          Data output to write to
-     * @param   value
-     *          Value to write
-     */
-    private void writeObject(ByteArrayDataOutput out, Object value) {
-        Preconditions.checkNotNull(value, "value to write");
-        if (value instanceof String) {
-            out.writeUTF((String) value);
-        } else if (value instanceof Boolean) {
-            out.writeBoolean((boolean) value);
-        } else if (value instanceof Integer) {
-            out.writeInt((int) value);
-        } else if (value instanceof Double) {
-            out.writeDouble((double) value);
-        } else throw new IllegalArgumentException("Unhandled message data type " + value.getClass().getName());
     }
 }

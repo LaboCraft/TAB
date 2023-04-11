@@ -1,23 +1,19 @@
 package me.neznamy.tab.api.config;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.Setter;
+import me.neznamy.tab.api.TabAPI;
+
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-
-import me.neznamy.tab.api.TabAPI;
-import me.neznamy.tab.api.util.Preconditions;
 
 /**
  * Abstract class for configuration file
@@ -29,10 +25,10 @@ public abstract class ConfigurationFile {
     protected List<String> header;
 
     /** Configuration file content */
-    protected Map<String, Object> values;
+    @Getter @Setter protected Map<String, Object> values;
 
     /** File to use */
-    protected final File file;
+    @Getter protected final File file;
 
     /**
      * Constructs new instance and attempts to load specified configuration file.
@@ -49,22 +45,12 @@ public abstract class ConfigurationFile {
      * @throws  IOException
      *          if I/O operation with the file unexpectedly fails
      */
-    protected ConfigurationFile(InputStream source, File destination) throws IOException {
-        Preconditions.checkNotNull(destination, "destination");
+    protected ConfigurationFile(InputStream source, @NonNull File destination) throws IOException {
         this.file = destination;
         if (file.getParentFile() != null && !file.getParentFile().exists()) Files.createDirectories(file.getParentFile().toPath());
-        if (!file.exists() && source == null) throw new IllegalStateException("File does not exist and source is null");
-        if (file.createNewFile()) {
-//            Files.copy(source, file.toPath());
-            //avoiding MalformedInputException thrown on fabric due to file not having UTF8 encoding by default
-            //also automatically using the encoding so users don't have to worry about it anymore
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(source, StandardCharsets.UTF_8));
-                BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8))){
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    writer.write(line + "\n");
-                }
-            }
+        if (!file.exists()) {
+            if (source == null) throw new IllegalStateException("File does not exist and source is null");
+            Files.copy(source, file.toPath());
         }
         detectHeader();
     }
@@ -81,19 +67,6 @@ public abstract class ConfigurationFile {
      */
     public String getName() {
         return file.getName();
-    }
-
-    /**
-     * Returns the root value map
-     *
-     * @return  the root value map
-     */
-    public Map<String, Object> getValues(){
-        return values;
-    }
-
-    public void setValues(Map<String, Object> values) {
-        this.values = values;
     }
 
     /**
@@ -422,9 +395,5 @@ public abstract class ConfigurationFile {
         if (file.createNewFile()) {
             Files.write(file.toPath(), content);
         }
-    }
-
-    public File getFile() {
-        return file;
     }
 }

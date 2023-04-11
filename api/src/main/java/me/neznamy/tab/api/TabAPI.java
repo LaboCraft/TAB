@@ -7,7 +7,6 @@ import me.neznamy.tab.api.config.ConfigurationFile;
 import me.neznamy.tab.api.event.EventBus;
 import me.neznamy.tab.api.placeholder.PlaceholderManager;
 import me.neznamy.tab.api.scoreboard.ScoreboardManager;
-import me.neznamy.tab.api.task.ThreadManager;
 import me.neznamy.tab.api.team.TeamManager;
 
 /**
@@ -17,6 +16,13 @@ public abstract class TabAPI {
 
     /** Instance of the API */
     private static TabAPI instance;
+
+    /**
+     * Constructs new instance and sets it as new API instance
+     */
+    public TabAPI() {
+        instance = this;
+    }
 
     /**
      * Returns API instance. If instance was not set by the plugin, throws
@@ -29,19 +35,13 @@ public abstract class TabAPI {
      *          If instance is {@code null}
      */
     public static TabAPI getInstance() {
-        if (instance == null) throw new IllegalStateException("API instance is null. This likely means you shaded TAB's API into your project" +
-                " instead of only using it, which is not allowed.");
+        if (instance == null) throw new IllegalStateException("The API instance is null. This can have 2 possible causes: \n" +
+                "#1 - API was called before TAB was loaded. This means your plugin was loaded before TAB was. To make sure your " +
+                "plugin loads after TAB, add it as a depend or softdepend of your plugin.\n" +
+                "#2 - You shaded TAB's classes into your plugin, instead of only using them. This is not allowed. To verify this " +
+                "is your case, unzip your plugin and check for TAB's classes. If they are there, you will need to fix your compiler " +
+                "to not include them, such as scope provided for maven compilation.");
         return instance;
-    }
-
-    /**
-     * Instance setter for internal use by the plugin only.
-     *
-     * @param   instance
-     *          API instance
-     */
-    public static void setInstance(TabAPI instance) {
-        TabAPI.instance = instance;
     }
 
     /**
@@ -141,13 +141,6 @@ public abstract class TabAPI {
      *          {@code true} if colors should be translated, {@code false} if not
      */
     public abstract void sendConsoleMessage(String message, boolean translateColors);
-
-    /**
-     * Returns TAB's Thread manager, which allows task submitting
-     *
-     * @return  ThreadManager instance
-     */
-    public abstract ThreadManager getThreadManager();
 
     /**
      * Returns TAB's cache file used to store player toggle data

@@ -1,21 +1,34 @@
 package me.neznamy.tab.platforms.bungeecord;
 
-import de.myzelyam.api.vanish.BungeeVanishAPI;
-import io.netty.channel.Channel;
+import lombok.Getter;
+import lombok.NonNull;
+import me.neznamy.tab.api.BossBarHandler;
 import me.neznamy.tab.api.ProtocolVersion;
+import me.neznamy.tab.api.Scoreboard;
 import me.neznamy.tab.api.TabConstants;
-import me.neznamy.tab.api.protocol.Skin;
-import me.neznamy.tab.api.util.Preconditions;
+import me.neznamy.tab.api.chat.IChatBaseComponent;
+import me.neznamy.tab.api.tablist.Skin;
+import me.neznamy.tab.api.tablist.TabList;
+import me.neznamy.tab.api.util.ComponentCache;
+import me.neznamy.tab.platforms.bungeecord.bossbar.BungeeBossBarHandler;
+import me.neznamy.tab.platforms.bungeecord.tablist.BungeeTabList1_19_3;
+import me.neznamy.tab.platforms.bungeecord.tablist.BungeeTabList1_7;
+import me.neznamy.tab.platforms.bungeecord.tablist.BungeeTabList1_8;
 import me.neznamy.tab.shared.TAB;
 import me.neznamy.tab.shared.proxy.ProxyTabPlayer;
+import net.md_5.bungee.UserConnection;
 import net.md_5.bungee.api.ProxyServer;
+import net.md_5.bungee.api.chat.BaseComponent;
 import net.md_5.bungee.api.connection.ProxiedPlayer;
+import net.md_5.bungee.chat.ComponentSerializer;
+import net.md_5.bungee.connection.InitialHandler;
+import net.md_5.bungee.connection.LoginResult;
 import net.md_5.bungee.protocol.DefinedPacket;
+import net.md_5.bungee.protocol.Property;
 import net.md_5.bungee.protocol.Protocol;
 import net.md_5.bungee.protocol.packet.LoginRequest;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 /**
@@ -23,43 +36,34 @@ import java.lang.reflect.Method;
  */
 public class BungeeTabPlayer extends ProxyTabPlayer {
 
+    /** Component cache to save CPU when creating components */
+    private static final ComponentCache<IChatBaseComponent, BaseComponent[]> componentCache = new ComponentCache<>(10000,
+            (component, clientVersion) -> ComponentSerializer.parse(component.toString(clientVersion)));
+
     /** Inaccessible bungee internals */
-    private static Method InitialHandler_getLoginProfile;
-    private static Method InitialHandler_getLoginRequest;
-    private static Method ChannelWrapper_getHandle;
-    private static Method LoginResult_Property_getValue;
-    private static Method LoginResult_Property_getSignature;
-    private static Method LoginResult_getProperties;
-    private static Method UserConnection_getGamemode;
-    private static Field wrapperField;
     private static Object directionData;
     private static Method getId;
 
     static {
         try {
-            Class<?> initialHandler = Class.forName("net.md_5.bungee.connection.InitialHandler");
-            InitialHandler_getLoginProfile = initialHandler.getMethod("getLoginProfile");
-            InitialHandler_getLoginRequest = initialHandler.getMethod("getLoginRequest");
-            Class<?> channelWrapper = Class.forName("net.md_5.bungee.netty.ChannelWrapper");
-            ChannelWrapper_getHandle = channelWrapper.getMethod("getHandle");
-            Class<?> loginResult = Class.forName("net.md_5.bungee.connection.LoginResult");
-            Class<?> loginResult_Property = Class.forName("net.md_5.bungee.protocol.Property");
-            LoginResult_Property_getValue = loginResult_Property.getMethod("getValue");
-            LoginResult_Property_getSignature = loginResult_Property.getMethod("getSignature");
-            LoginResult_getProperties = loginResult.getMethod("getProperties");
-            Class<?> userConnection = Class.forName("net.md_5.bungee.UserConnection");
-            UserConnection_getGamemode = userConnection.getMethod("getGamemode");
             Field f = Protocol.class.getDeclaredField("TO_CLIENT");
             f.setAccessible(true);
             directionData = f.get(Protocol.GAME);
-            getId = directionData.getClass().getDeclaredMethod("getId", Class.class, int.class);
-            getId.setAccessible(true);
-            wrapperField = initialHandler.getDeclaredField("ch");
-            wrapperField.setAccessible(true);
+            (getId = directionData.getClass().getDeclaredMethod("getId", Class.class, int.class)).setAccessible(true);
         } catch (ReflectiveOperationException e) {
             TAB.getInstance().getErrorManager().criticalError("Failed to initialize bungee internal fields", e);
         }
     }
+
+    /** Player's scoreboard */
+    @Getter private final Scoreboard scoreboard = new BungeeScoreboard(this);
+
+    /** Player's tablist based on version */
+    private final TabList tabList1_7 = new BungeeTabList1_7(this);
+    private final TabList tabList1_8 = new BungeeTabList1_8(this);
+    private final TabList tabList1_19_3 = new BungeeTabList1_19_3(this);
+
+    @Getter private final BossBarHandler bossBarHandler = new BungeeBossBarHandler(this);
 
     /**
      * Constructs new instance for given player
@@ -68,21 +72,12 @@ public class BungeeTabPlayer extends ProxyTabPlayer {
      *          BungeeCord player
      */
     public BungeeTabPlayer(ProxiedPlayer p) {
-        super(p, p.getUniqueId(), p.getName(), p.getServer() != null ? p.getServer().getInfo().getName() : "-", -1, true);
-        try {
-            channel = (Channel) ChannelWrapper_getHandle.invoke(wrapperField.get(getPlayer().getPendingConnection()));
-        } catch (IllegalAccessException | InvocationTargetException e) {
-            TAB.getInstance().getErrorManager().criticalError("Failed to get channel of " + getPlayer().getName(), e);
-        }
+        super(p, p.getUniqueId(), p.getName(), p.getServer() != null ? p.getServer().getInfo().getName() : "-", -1);
     }
 
     @Override
-    public boolean hasPermission0(String permission) {
-        Preconditions.checkNotNull(permission, "permission");
-        long time = System.nanoTime();
-        boolean value = getPlayer().hasPermission(permission);
-        TAB.getInstance().getCPUManager().addMethodTime("hasPermission", System.nanoTime()-time);
-        return value;
+    public boolean hasPermission0(@NonNull String permission) {
+        return getPlayer().hasPermission(permission);
     }
 
     @Override
@@ -92,24 +87,21 @@ public class BungeeTabPlayer extends ProxyTabPlayer {
 
     @Override
     public void sendPacket(Object nmsPacket) {
-        long time = System.nanoTime();
-        if (nmsPacket != null && getPlayer().isConnected()) getPlayer().unsafe().sendPacket((DefinedPacket) nmsPacket);
-        TAB.getInstance().getCPUManager().addMethodTime("sendPacket", System.nanoTime()-time);
+        getPlayer().unsafe().sendPacket((DefinedPacket) nmsPacket);
+    }
+
+    @Override
+    public void sendMessage(IChatBaseComponent message) {
+        getPlayer().sendMessage(componentCache.get(message, getVersion()));
     }
 
     @Override
     public Skin getSkin() {
-        try {
-            Object loginResult = InitialHandler_getLoginProfile.invoke(getPlayer().getPendingConnection());
-            if (loginResult == null) return null;
-            Object[] properties = (Object[]) LoginResult_getProperties.invoke(loginResult);
-            if (properties == null || properties.length == 0) return null;
-            return new Skin((String) LoginResult_Property_getValue.invoke(properties[0]),
-                    (String) LoginResult_Property_getSignature.invoke(properties[0]));
-        } catch (ReflectiveOperationException e) {
-            TAB.getInstance().getErrorManager().printError("Failed to get skin of " + getName(), e);
-            return null;
-        }
+        LoginResult loginResult = ((InitialHandler)getPlayer().getPendingConnection()).getLoginProfile();
+        if (loginResult == null) return null;
+        Property[] properties = loginResult.getProperties();
+        if (properties == null || properties.length == 0) return null;
+        return new Skin(properties[0].getValue(), properties[0].getSignature());
     }
 
     @Override
@@ -124,8 +116,7 @@ public class BungeeTabPlayer extends ProxyTabPlayer {
      *          packet class
      * @return  packet ID
      */
-    public int getPacketId(Class<? extends DefinedPacket> clazz) {
-        Preconditions.checkNotNull(clazz, "class");
+    public int getPacketId(@NonNull Class<? extends DefinedPacket> clazz) {
         try {
             return (int) getId.invoke(directionData, clazz, getPlayer().getPendingConnection().getVersion());
         } catch (ReflectiveOperationException e) {
@@ -134,6 +125,13 @@ public class BungeeTabPlayer extends ProxyTabPlayer {
         }
     }
 
+    /**
+     * If ViaVersion is installed on BungeeCord, it changes protocol to match version
+     * of server to which player is connected to. For that reason, we need to retrieve
+     * the field more often than just on join.
+     *
+     * @return  Player's current protocol version
+     */
     @Override
     public ProtocolVersion getVersion() {
         return ProtocolVersion.fromNetworkId(getPlayer().getPendingConnection().getVersion());
@@ -142,7 +140,8 @@ public class BungeeTabPlayer extends ProxyTabPlayer {
     @Override
     public boolean isVanished() {
         try {
-            if (ProxyServer.getInstance().getPluginManager().getPlugin(TabConstants.Plugin.PREMIUM_VANISH) != null && BungeeVanishAPI.isInvisible(getPlayer())) return true;
+            if (ProxyServer.getInstance().getPluginManager().getPlugin(TabConstants.Plugin.PREMIUM_VANISH) != null &&
+                    (boolean) Class.forName("de.myzelyam.api.vanish.BungeeVanishAPI").getMethod("isInvisible", ProxiedPlayer.class).invoke(null, getPlayer())) return true;
         } catch (Exception e) {
             TAB.getInstance().getErrorManager().printError("PremiumVanish v" + TAB.getInstance().getPlatform().getPluginVersion(TabConstants.Plugin.PREMIUM_VANISH) +
                     " generated an error when retrieving vanish status of " + getName(), e);
@@ -157,29 +156,33 @@ public class BungeeTabPlayer extends ProxyTabPlayer {
 
     @Override
     public int getGamemode() {
-        try {
-            return (int) UserConnection_getGamemode.invoke(player);
-        } catch (ReflectiveOperationException e) {
-            TAB.getInstance().getErrorManager().printError("Failed to get gamemode of " + getPlayer().getName(), e);
-            return 0;
-        }
+        return ((UserConnection)player).getGamemode();
     }
 
     @Override
-    public Object getProfilePublicKey() {
-        try {
-            return ((LoginRequest) InitialHandler_getLoginRequest.invoke(getPlayer().getPendingConnection())).getPublicKey();
-        } catch (ReflectiveOperationException e) {
-            TAB.getInstance().getErrorManager().printError("Failed to get profile key of " + getPlayer().getName(), e);
-            return null;
-        }
+    public void setPlayerListHeaderFooter(@NonNull IChatBaseComponent header, @NonNull IChatBaseComponent footer) {
+        getPlayer().setTabHeader(componentCache.get(header, getVersion()), componentCache.get(footer, getVersion()));
+    }
+
+    @Override
+    public TabList getTabList() {
+        return getVersion().getNetworkId() >= ProtocolVersion.V1_19_3.getNetworkId() ?
+                tabList1_19_3 : getVersion().getMinorVersion() >= 8 ? tabList1_8 : tabList1_7;
+    }
+
+    @Override
+    public Object getChatSession() {
+        LoginRequest login = ((InitialHandler)getPlayer().getPendingConnection()).getLoginRequest();
+        return new Object[]{login.getUuid(), login.getPublicKey()}; // BungeeCord has no single object for this
     }
 
     @Override
     public void sendPluginMessage(byte[] message) {
-        Preconditions.checkNotNull(message, "message");
-        if (getPlayer().getServer() == null) return;
+        if (getPlayer().getServer() == null) {
+            TAB.getInstance().getErrorManager().printError("Skipped plugin message send to " + getName() + ", because player is not" +
+                    "connected to any server (message=" + new String(message) + ")");
+            return;
+        }
         getPlayer().getServer().sendData(TabConstants.PLUGIN_MESSAGE_CHANNEL_NAME, message);
-        TAB.getInstance().getCPUManager().packetSent("Plugin Message (" + new String(message) + ")");
     }
 }

@@ -3,7 +3,7 @@ package me.neznamy.tab.shared.placeholders;
 import java.util.*;
 import java.util.function.Function;
 
-import me.neznamy.tab.api.TabFeature;
+import me.neznamy.tab.api.feature.Refreshable;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.placeholder.PlayerPlaceholder;
 import me.neznamy.tab.shared.TAB;
@@ -31,7 +31,8 @@ public class PlayerPlaceholderImpl extends TabPlaceholder implements PlayerPlace
      * @param   identifier
      *          placeholder's identifier, must start and end with %
      * @param   refresh
-     *          refresh interval in milliseconds, must be divisible by 50 or equal to -1 for trigger placeholders
+     *          refresh interval in milliseconds, must be divisible by {@link me.neznamy.tab.api.TabConstants.Placeholder#MINIMUM_REFRESH_INTERVAL}
+     *          or equal to -1 to disable automatic refreshing
      * @param   function
      *          refresh function which returns new up-to-date output on request
      */
@@ -58,11 +59,10 @@ public class PlayerPlaceholderImpl extends TabPlaceholder implements PlayerPlace
         if (identifier.equals(newValue) && !lastValues.containsKey(p)) {
             lastValues.put(p, identifier);
         }
-        if (!lastValues.containsKey(p) || (!ERROR_VALUE.equals(newValue) && !identifier.equals(newValue) && !lastValues.get(p).equals(newValue))) {
+        if (!lastValues.containsKey(p) || (!ERROR_VALUE.equals(newValue) && !identifier.equals(newValue) && !newValue.equals(lastValues.getOrDefault(p, null)))) {
             lastValues.put(p, ERROR_VALUE.equals(newValue) ? identifier : newValue);
             updateParents(p);
-            if (TAB.getInstance().getPlaceholderManager().getTabExpansion() != null)
-                TAB.getInstance().getPlaceholderManager().getTabExpansion().setPlaceholderValue(p, identifier, newValue);
+            TAB.getInstance().getPlaceholderManager().getTabExpansion().setPlaceholderValue(p, identifier, newValue);
             return true;
         }
         return false;
@@ -81,15 +81,20 @@ public class PlayerPlaceholderImpl extends TabPlaceholder implements PlayerPlace
      *          whether refreshing should be forced or not
      */
     private void updateValue(TabPlayer player, Object value, boolean force) {
-        String s = getReplacements().findReplacement(value == null ? lastValues.getOrDefault(player, identifier) : value.toString());
+        String s = getReplacements().findReplacement(value == null ? lastValues.getOrDefault(player, identifier) :
+                setPlaceholders(value.toString(), player));
         if (s.equals(lastValues.getOrDefault(player, identifier)) && !force) return;
         lastValues.put(player, s);
-        if (TAB.getInstance().getPlaceholderManager().getTabExpansion() != null)
-            TAB.getInstance().getPlaceholderManager().getTabExpansion().setPlaceholderValue(player, identifier, s);
-        if (!player.isLoaded()) return;
-        Set<TabFeature> usage = TAB.getInstance().getPlaceholderManager().getPlaceholderUsage().get(identifier);
+        TAB.getInstance().getPlaceholderManager().getTabExpansion().setPlaceholderValue(player, identifier, s);
+        if (!player.isLoaded()) {
+            if (player.isOnline()) {
+                TAB.getInstance().getCPUManager().runTask(() -> updateValue(player, value, force));
+            }
+            return;
+        }
+        Set<Refreshable> usage = TAB.getInstance().getPlaceholderManager().getPlaceholderUsage().get(identifier);
         if (usage == null) return;
-        for (TabFeature f : usage) {
+        for (Refreshable f : usage) {
             long time = System.nanoTime();
             f.refresh(player, false);
             TAB.getInstance().getCPUManager().addTime(f.getFeatureName(), f.getRefreshDisplayName(), System.nanoTime()-time);

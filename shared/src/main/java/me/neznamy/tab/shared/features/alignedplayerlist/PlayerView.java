@@ -1,9 +1,9 @@
 package me.neznamy.tab.shared.features.alignedplayerlist;
 
+import me.neznamy.tab.api.Property;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.chat.EnumChatFormat;
 import me.neznamy.tab.api.chat.IChatBaseComponent;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo;
 import me.neznamy.tab.shared.TAB;
 import me.neznamy.tab.api.TabConstants;
 
@@ -44,8 +44,7 @@ public class PlayerView {
             maxPlayer = connectedPlayer;
             updateAllPlayers();
         } else {
-            viewer.sendCustomPacket(new PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.UPDATE_DISPLAY_NAME,
-                    new PacketPlayOutPlayerInfo.PlayerInfoData(feature.getTablistUUID(connectedPlayer, viewer), formatName(connectedPlayer))), feature);
+            viewer.getTabList().updateDisplayName(feature.getTablistUUID(connectedPlayer, viewer), formatName(connectedPlayer));
         }
     }
 
@@ -56,25 +55,26 @@ public class PlayerView {
             if (recalculateMaxWidth(null)) {
                 updateAllPlayers();
             } else {
-                viewer.sendCustomPacket(new PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.UPDATE_DISPLAY_NAME,
-                        new PacketPlayOutPlayerInfo.PlayerInfoData(feature.getTablistUUID(target, viewer), formatName(target))), feature);
+                viewer.getTabList().updateDisplayName(feature.getTablistUUID(target, viewer), formatName(target));
             }
         }
     }
 
     private void updateAllPlayers() {
         for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
-            viewer.sendCustomPacket(new PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.UPDATE_DISPLAY_NAME,
-                    new PacketPlayOutPlayerInfo.PlayerInfoData(feature.getTablistUUID(all, viewer), formatName(all))), feature);
+            viewer.getTabList().updateDisplayName(feature.getTablistUUID(all, viewer), formatName(all));
         }
     }
 
     public synchronized IChatBaseComponent formatName(TabPlayer target) {
         Integer width = playerWidths.get(target);
         if (width == null) return null; //in packet reader, not loaded yet, will send packet after loading player
-        String prefixAndName = target.getProperty(TabConstants.Property.TABPREFIX).getFormat(viewer) +
-                target.getProperty(TabConstants.Property.CUSTOMTABNAME).getFormat(viewer);
-        String suffix = target.getProperty(TabConstants.Property.TABSUFFIX).getFormat(viewer);
+        Property prefixPr = target.getProperty(TabConstants.Property.TABPREFIX);
+        Property namePr = target.getProperty(TabConstants.Property.CUSTOMTABNAME);
+        Property suffixPr = target.getProperty(TabConstants.Property.TABSUFFIX);
+        if (prefixPr == null || namePr == null || suffixPr == null) return null; // no idea why is another check needed
+        String prefixAndName = prefixPr.getFormat(viewer) + namePr.getFormat(viewer);
+        String suffix = suffixPr.getFormat(viewer);
         if (suffix.length() == 0) return IChatBaseComponent.optimizedComponent(prefixAndName);
         if ((target.isVanished() && !canSeeVanished) || width > maxWidth) {
             //tab sending packets for vanished players or player just unvanished
@@ -93,13 +93,13 @@ public class PlayerView {
     /**
      * Returns a combination of normal and bold spaces to build exactly the requested amount of pixels.
      * Must be at least 12 as lower numbers cannot always be built using numbers 4 (normal space + 1 pixel) and 5 (bold space + 1 pixel)
-     * Returns the result string with normal then bold spaces, such as "   &l   &r"
+     * Returns the result string with normal then bold spaces, such as "   &amp;l   &amp;r"
      *
      * @param   pixelWidth
      *          amount of pixels to be built
-     * @return  string consisting of spaces and &l &r
+     * @return  string consisting of spaces and &amp;l &amp;r
      * @throws  IllegalArgumentException
-     *          if pixelWidth is < 12
+     *          if pixelWidth is &lt; 12
      */
     private String buildSpaces(int pixelWidth) {
         if (pixelWidth < 12) throw new IllegalArgumentException("Cannot build space lower than 12 pixels wide");
@@ -125,8 +125,7 @@ public class PlayerView {
         if (recalculateMaxWidth(null)) {
             updateAllPlayers();
         } else {
-            viewer.sendCustomPacket(new PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.UPDATE_DISPLAY_NAME,
-                    new PacketPlayOutPlayerInfo.PlayerInfoData(feature.getTablistUUID(target, viewer), formatName(target))), feature);
+            viewer.getTabList().updateDisplayName(feature.getTablistUUID(target, viewer), formatName(target));
         }
     }
 

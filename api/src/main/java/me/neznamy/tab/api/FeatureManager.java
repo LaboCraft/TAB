@@ -1,5 +1,7 @@
 package me.neznamy.tab.api;
 
+import me.neznamy.tab.api.feature.TabFeature;
+
 import java.util.UUID;
 
 /**
@@ -91,9 +93,10 @@ public interface FeatureManager {
      */
     boolean onCommand(TabPlayer sender, String command);
 
-    void markObjective();
-
-    void markDisplayObjective();
-
+    /**
+     * Returns array of all currently enabled features
+     *
+     * @return  array of all currently enabled features
+     */
     TabFeature[] getValues();
 }

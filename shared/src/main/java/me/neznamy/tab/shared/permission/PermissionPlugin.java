@@ -1,24 +1,20 @@
 package me.neznamy.tab.shared.permission;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import me.neznamy.tab.api.TabPlayer;
 
 /**
  * An abstract class representing permission plugin hook
  */
+@AllArgsConstructor
 public abstract class PermissionPlugin {
 
     /** Version of the permission plugin */
-    private final String version;
+    @Getter private final String version;
 
-    /**
-     * Constructs new instance with given version parameter
-     *
-     * @param   version
-     *          version of permission plugin
-     */
-    protected PermissionPlugin(String version) {
-        this.version = version;
-    }
+    /** Permission plugin's name */
+    @Getter private final String name = getClass().getSimpleName();
 
     /**
      * Returns primary permission group of player
@@ -28,22 +24,4 @@ public abstract class PermissionPlugin {
      * @return  player's primary permission group
      */
     public abstract String getPrimaryGroup(TabPlayer player);
-    
-    /**
-     * Returns version of the permission plugin
-     *
-     * @return  version of the permission plugin
-     */
-    public String getVersion() {
-        return version;
-    }
-    
-    /**
-     * Returns name of the permission plugin
-     *
-     * @return  name of the permission plugin
-     */
-    public String getName() {
-        return getClass().getSimpleName();
-    }
 }

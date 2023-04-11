@@ -2,6 +2,8 @@ package me.neznamy.tab.platforms.bungeecord;
 
 import me.neznamy.tab.api.TabAPI;
 import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.shared.TAB;
+import me.neznamy.tab.shared.proxy.ProxyPlatform;
 import net.md_5.bungee.api.connection.ProxiedPlayer;
 import net.md_5.bungee.api.event.ChatEvent;
 import net.md_5.bungee.api.event.PlayerDisconnectEvent;
@@ -15,12 +17,6 @@ import net.md_5.bungee.event.EventHandler;
  */
 public class BungeeEventListener implements Listener {
 
-    private final BungeePlatform platform;
-
-    public BungeeEventListener(BungeePlatform platform) {
-        this.platform = platform;
-    }
-
     /**
      * Disconnect event listener to forward the event to all features
      *
@@ -28,9 +24,9 @@ public class BungeeEventListener implements Listener {
      *          disconnect event
      */
     @EventHandler
-    public void onQuit(PlayerDisconnectEvent e){
+    public void onQuit(PlayerDisconnectEvent e) {
         if (TabAPI.getInstance().isPluginDisabled()) return;
-        TabAPI.getInstance().getThreadManager().runTask(() ->
+        TAB.getInstance().getCPUManager().runTask(() ->
                 TabAPI.getInstance().getFeatureManager().onQuit(TabAPI.getInstance().getPlayer(e.getPlayer().getUniqueId())));
     }
 
@@ -41,9 +37,9 @@ public class BungeeEventListener implements Listener {
      *          switch event
      */
     @EventHandler
-    public void onSwitch(ServerSwitchEvent e){
+    public void onSwitch(ServerSwitchEvent e) {
         if (TabAPI.getInstance().isPluginDisabled()) return;
-        TabAPI.getInstance().getThreadManager().runTask(() -> {
+        TAB.getInstance().getCPUManager().runTask(() -> {
             if (TabAPI.getInstance().getPlayer(e.getPlayer().getUniqueId()) == null) {
                 TabAPI.getInstance().getFeatureManager().onJoin(new BungeeTabPlayer(e.getPlayer()));
             } else {
@@ -72,12 +68,12 @@ public class BungeeEventListener implements Listener {
      *          plugin message event
      */
     @EventHandler
-    public void on(PluginMessageEvent event){
+    public void on(PluginMessageEvent event) {
         if (!event.getTag().equals(TabConstants.PLUGIN_MESSAGE_CHANNEL_NAME)) return;
         if (event.getReceiver() instanceof ProxiedPlayer) {
             event.setCancelled(true);
-            platform.getPluginMessageHandler().onPluginMessage(
-                    ((ProxiedPlayer) event.getReceiver()).getUniqueId(), event.getData());
+            ((ProxyPlatform)TAB.getInstance().getPlatform()).getPluginMessageHandler().onPluginMessage(
+                    ((ProxiedPlayer) event.getReceiver()).getUniqueId(), ((ProxiedPlayer) event.getReceiver()).getName(), event.getData());
         }
     }
 }

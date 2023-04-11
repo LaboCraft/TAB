@@ -2,23 +2,28 @@ package me.neznamy.tab.platforms.bungeecord;
 
 import com.imaginarycode.minecraft.redisbungee.RedisBungeeAPI;
 import com.imaginarycode.minecraft.redisbungee.events.PubSubMessageEvent;
+import lombok.AllArgsConstructor;
 import me.neznamy.tab.api.TabConstants;
 import me.neznamy.tab.shared.features.redis.RedisSupport;
 import net.md_5.bungee.api.ProxyServer;
 import net.md_5.bungee.api.plugin.Listener;
+import net.md_5.bungee.api.plugin.Plugin;
 import net.md_5.bungee.event.EventHandler;
 
 /**
  * Redis implementation for BungeeCord
  */
+@AllArgsConstructor
 public class RedisBungeeSupport extends RedisSupport implements Listener {
 
-    /**
-     * Constructs new instance, registers listeners and overrides placeholders
-     */
-    public RedisBungeeSupport() {
-        ProxyServer.getInstance().getPluginManager().registerListener(ProxyServer.getInstance().getPluginManager().getPlugin("TAB"), this);
+    /** Plugin reference for registering listener */
+    private final Plugin plugin;
+
+    @Override
+    public void load() {
+        ProxyServer.getInstance().getPluginManager().registerListener(plugin, this);
         RedisBungeeAPI.getRedisBungeeApi().registerPubSubChannels(TabConstants.REDIS_CHANNEL_NAME);
+        super.load();
     }
 
     @EventHandler

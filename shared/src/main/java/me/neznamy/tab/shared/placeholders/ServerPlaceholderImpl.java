@@ -3,7 +3,8 @@ package me.neznamy.tab.shared.placeholders;
 import java.util.Set;
 import java.util.function.Supplier;
 
-import me.neznamy.tab.api.TabFeature;
+import lombok.Getter;
+import me.neznamy.tab.api.feature.Refreshable;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.placeholder.ServerPlaceholder;
 import me.neznamy.tab.shared.TAB;
@@ -17,7 +18,7 @@ public class ServerPlaceholderImpl extends TabPlaceholder implements ServerPlace
     private final Supplier<Object> supplier;
 
     /** Last known output of the placeholder */
-    private String lastValue;
+    @Getter private String lastValue;
 
     /**
      * Constructs new instance with given parameters
@@ -25,7 +26,8 @@ public class ServerPlaceholderImpl extends TabPlaceholder implements ServerPlace
      * @param   identifier
      *          placeholder's identifier, must start and end with %
      * @param   refresh
-     *          refresh interval in milliseconds, must be divisible by 50 or equal to -1 for trigger placeholders
+     *          refresh interval in milliseconds, must be divisible by {@link me.neznamy.tab.api.TabConstants.Placeholder#MINIMUM_REFRESH_INTERVAL}
+     *          or equal to -1 to disable automatic refreshing
      * @param   supplier
      *          supplier returning fresh output on request
      */
@@ -53,8 +55,7 @@ public class ServerPlaceholderImpl extends TabPlaceholder implements ServerPlace
             lastValue = newValue;
             for (TabPlayer player : TAB.getInstance().getOnlinePlayers()) {
                 updateParents(player);
-                if (TAB.getInstance().getPlaceholderManager().getTabExpansion() != null)
-                    TAB.getInstance().getPlaceholderManager().getTabExpansion().setPlaceholderValue(player, identifier, newValue);
+                TAB.getInstance().getPlaceholderManager().getTabExpansion().setPlaceholderValue(player, identifier, newValue);
             }
             return true;
         }
@@ -75,17 +76,17 @@ public class ServerPlaceholderImpl extends TabPlaceholder implements ServerPlace
         String s = getReplacements().findReplacement(value == null ? lastValue == null ? identifier : lastValue : value.toString());
         if (s.equals(lastValue) && !force) return;
         lastValue = s;
-        Set<TabFeature> usage = TAB.getInstance().getPlaceholderManager().getPlaceholderUsage().get(identifier);
+        Set<Refreshable> usage = TAB.getInstance().getPlaceholderManager().getPlaceholderUsage().get(identifier);
         if (usage == null) return;
         for (TabPlayer player : TAB.getInstance().getOnlinePlayers()) {
-            for (TabFeature f : usage) {
+            if (!player.isLoaded()) continue;
+            for (Refreshable f : usage) {
                 long time = System.nanoTime();
                 f.refresh(player, false);
                 TAB.getInstance().getCPUManager().addTime(f.getFeatureName(), f.getRefreshDisplayName(), System.nanoTime()-time);
             }
             updateParents(player);
-            if (TAB.getInstance().getPlaceholderManager().getTabExpansion() != null)
-                TAB.getInstance().getPlaceholderManager().getTabExpansion().setPlaceholderValue(player, identifier, s);
+            TAB.getInstance().getPlaceholderManager().getTabExpansion().setPlaceholderValue(player, identifier, s);
         }
     }
 
@@ -101,11 +102,6 @@ public class ServerPlaceholderImpl extends TabPlaceholder implements ServerPlace
 
     @Override
     public String getLastValue(TabPlayer p) {
-        return lastValue;
-    }
-
-    @Override
-    public String getLastValue() {
         return lastValue;
     }
 

@@ -1,9 +1,13 @@
 package me.neznamy.tab.api.chat;
 
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.NonNull;
+import lombok.Setter;
 import me.neznamy.tab.api.ProtocolVersion;
 import me.neznamy.tab.api.TabAPI;
 import me.neznamy.tab.api.chat.rgb.RGBUtils;
-import me.neznamy.tab.api.util.Preconditions;
+import me.neznamy.tab.api.util.ComponentCache;
 import org.json.simple.JSONObject;
 
 import java.util.*;
@@ -12,39 +16,37 @@ import java.util.*;
  * A class representing the n.m.s.IChatBaseComponent class to make work with it much easier
  */
 @SuppressWarnings("unchecked")
+@NoArgsConstructor
 public class IChatBaseComponent {
 
     /**
      * Component cache maps to avoid large memory allocations as well as
      * higher CPU usage when using animations which send the same text on repeat.
      */
-    private static final Map<String, IChatBaseComponent> componentCache = new HashMap<>();
-    private static final Map<IChatBaseComponent, String> serializeCacheModern = new HashMap<>();
-    private static final Map<IChatBaseComponent, String> serializeCacheLegacy = new HashMap<>();
+    private static final ComponentCache<String, IChatBaseComponent> stringCache = new ComponentCache<>(10000, (text, clientVersion) -> {
+                return text.contains("#") || text.contains("&x") || text.contains(EnumChatFormat.COLOR_CHAR + "x") || text.contains("<") ?
+                    IChatBaseComponent.fromColoredText(text) : //contains RGB colors
+                    new IChatBaseComponent(text); //no RGB
+            });
+    private static final ComponentCache<IChatBaseComponent, String> serializeCache = new ComponentCache<>(10000,
+            (component, clientVersion) -> component.toString());
 
     /** Text of the component */
-    private String text;
+    @Getter @Setter private String text;
 
     /** Chat modifier containing color, magic codes, hover and click event */
-    private ChatModifier modifier = new ChatModifier();
+    @Getter @Setter @NonNull private ChatModifier modifier = new ChatModifier();
 
     /** Extra components used in "extra" field */
     private List<IChatBaseComponent> extra;
 
-    /**
-     * Constructs a new empty component
-     */
-    public IChatBaseComponent() {
-    }
-    
     /**
      * Constructs a new component which is a clone of provided component
      *
      * @param   component
      *          component to clone
      */
-    public IChatBaseComponent(IChatBaseComponent component) {
-        Preconditions.checkNotNull(component, "component");
+    public IChatBaseComponent(@NonNull IChatBaseComponent component) {
         this.text = component.text;
         this.modifier = new ChatModifier(component.modifier);
         for (IChatBaseComponent child : component.getExtra()) {
@@ -67,7 +69,7 @@ public class IChatBaseComponent {
      *
      * @return  list of extra components
      */
-    public List<IChatBaseComponent> getExtra(){
+    public List<IChatBaseComponent> getExtra() {
         if (extra == null) return Collections.emptyList();
         return extra;
     }
@@ -81,7 +83,7 @@ public class IChatBaseComponent {
      * @throws  IllegalArgumentException
      *          if {@code components} is an empty list
      */
-    public IChatBaseComponent setExtra(List<IChatBaseComponent> components){
+    public IChatBaseComponent setExtra(List<IChatBaseComponent> components) {
         if (components.isEmpty()) throw new IllegalArgumentException("Unexpected empty array of components"); //exception taken from minecraft
         this.extra = components;
         return this;
@@ -93,51 +95,9 @@ public class IChatBaseComponent {
      * @param   child
      *          component to append
      */
-    public void addExtra(IChatBaseComponent child) {
-        Preconditions.checkNotNull(child, "extra");
+    public void addExtra(@NonNull IChatBaseComponent child) {
         if (extra == null) extra = new ArrayList<>();
         extra.add(child);
-    }
-
-    /**
-     * Returns text of this component
-     *
-     * @return  text of this component
-     */
-    public String getText() {
-        return text;
-    }
-
-    /**
-     * Returns chat modifier of this component
-     *
-     * @return  chat modifier of this component
-     */
-    public ChatModifier getModifier() {
-        return modifier;
-    }
-
-    /**
-     * Sets modifier to provided value
-     *
-     * @param   modifier
-     *          modifier to set value to
-     * @throws  IllegalArgumentException
-     *          if {@code modifier} is null
-     */
-    public void setModifier(ChatModifier modifier) {
-        Preconditions.checkNotNull(modifier, "modifier");
-        this.modifier = modifier;
-    }
-
-    /**
-     * Changes text of this component
-     *
-     * @param   text
-     *          text to show
-     */
-    public void setText(String text) {
-        this.text = text;
     }
 
     /**
@@ -207,19 +167,7 @@ public class IChatBaseComponent {
         for (IChatBaseComponent child : getExtra()) {
             child.modifier.setTargetVersion(clientVersion);
         }
-        String string;
-        if (clientVersion.getMinorVersion() >= 16) {
-            if (serializeCacheModern.containsKey(this)) return serializeCacheModern.get(this);
-            string = toString();
-            if (serializeCacheModern.size() > 10000) serializeCacheModern.clear();
-            serializeCacheModern.put(this, string);
-        } else {
-            if (serializeCacheLegacy.containsKey(this)) return serializeCacheLegacy.get(this);
-            string = toString();
-            if (serializeCacheLegacy.size() > 10000) serializeCacheLegacy.clear();
-            serializeCacheLegacy.put(this, string);
-        }
-        return string;
+        return serializeCache.get(this, clientVersion);
     }
 
     /**
@@ -229,15 +177,14 @@ public class IChatBaseComponent {
      *          text to convert
      * @return  organized component from colored text
      */
-    public static IChatBaseComponent fromColoredText(String originalText){
-        Preconditions.checkNotNull(originalText, "text");
+    public static IChatBaseComponent fromColoredText(@NonNull String originalText) {
         String text = RGBUtils.getInstance().applyFormats(EnumChatFormat.color(originalText));
         List<IChatBaseComponent> components = new ArrayList<>();
         StringBuilder builder = new StringBuilder();
         IChatBaseComponent component = new IChatBaseComponent();
-        for (int i = 0; i < text.length(); i++){
+        for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
-            if (c == EnumChatFormat.COLOR_CHAR){
+            if (c == EnumChatFormat.COLOR_CHAR) {
                 i++;
                 if (i >= text.length()) {
                     break;
@@ -247,7 +194,7 @@ public class IChatBaseComponent {
                     c = (char)(c + ' ');
                 }
                 EnumChatFormat format = EnumChatFormat.getByChar(c);
-                if (format != null){
+                if (format != null) {
                     if (builder.length() > 0) {
                         component.setText(builder.toString());
                         components.add(component);
@@ -255,7 +202,7 @@ public class IChatBaseComponent {
                         component.text = null;
                         builder = new StringBuilder();
                     }
-                    switch (format){
+                    switch (format) {
                     case BOLD: 
                         component.modifier.setBold(true);
                         break;
@@ -281,7 +228,7 @@ public class IChatBaseComponent {
                         break;
                     }
                 }
-            } else if (c == '#' && text.length() > i+6){
+            } else if (c == '#' && text.length() > i+6) {
                 String hex = text.substring(i+1, i+7);
                 if (RGBUtils.getInstance().isHexCode(hex)) {
                     TextColor color;
@@ -292,7 +239,7 @@ public class IChatBaseComponent {
                         color = new TextColor(hex);
                         i += 6;
                     }
-                    if (builder.length() > 0){
+                    if (builder.length() > 0) {
                         component.setText(builder.toString());
                         components.add(component);
                         builder = new StringBuilder();
@@ -420,19 +367,7 @@ public class IChatBaseComponent {
      *          text to create component from
      * @return  The most performance-optimized component based on text
      */
-    public static IChatBaseComponent optimizedComponent(String text){
-        if (text == null) return null;
-        if (componentCache.containsKey(text)) return componentCache.get(text);
-        IChatBaseComponent component;
-        if (text.contains("#") || text.contains("&x") || text.contains(EnumChatFormat.COLOR_CHAR + "x") || text.contains("<")){
-            //contains RGB colors
-            component = IChatBaseComponent.fromColoredText(text);
-        } else {
-            //no RGB
-            component = new IChatBaseComponent(text);
-        }
-        if (componentCache.size() > 10000) componentCache.clear();
-        componentCache.put(text, component);
-        return component;
+    public static IChatBaseComponent optimizedComponent(String text) {
+        return stringCache.get(text, null);
     }
 }

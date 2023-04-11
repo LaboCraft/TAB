@@ -2,9 +2,9 @@ package me.neznamy.tab.shared.features.layout;
 
 import java.util.*;
 
+import lombok.Getter;
 import me.neznamy.tab.api.TabPlayer;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo.PlayerInfoData;
-import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.api.tablist.TabListEntry;
 import me.neznamy.tab.shared.placeholders.conditions.Condition;
 
 public class ParentGroup {
@@ -12,16 +12,13 @@ public class ParentGroup {
     private final Layout layout;
     private final Condition condition;
     private final int[] slots;
-    private final Map<Integer, PlayerSlot> playerSlots = new HashMap<>();
-    private final Map<TabPlayer, PlayerSlot> players = new HashMap<>();
+    @Getter private final Map<Integer, PlayerSlot> playerSlots = new HashMap<>();
+    @Getter final Map<TabPlayer, PlayerSlot> players = new HashMap<>();
     private final boolean hideVanishedPlayers;
 
     public ParentGroup(Layout layout, Condition condition, int[] slots, boolean hideVanishedPlayers) {
         this.layout = layout;
         this.condition = condition;
-        if (condition != null) {
-            layout.addUsedPlaceholders(Collections.singletonList(TabConstants.Placeholder.condition(condition.getName())));
-        }
         this.slots = slots;
         for (int slot : slots) {
             playerSlots.put(slot, new PlayerSlot(layout, layout.getManager().getUUID(slot)));
@@ -29,7 +26,7 @@ public class ParentGroup {
         this.hideVanishedPlayers = hideVanishedPlayers;
     }
 
-    public void tick(List<TabPlayer> remainingPlayers){
+    public void tick(List<TabPlayer> remainingPlayers) {
         players.clear();
         List<TabPlayer> meetingCondition = new ArrayList<>();
         for (TabPlayer p : remainingPlayers) {
@@ -52,17 +49,9 @@ public class ParentGroup {
         }
     }
     
-    public List<PlayerInfoData> getSlots(TabPlayer p) {
-        List<PlayerInfoData> data = new ArrayList<>();
+    public List<TabListEntry> getSlots(TabPlayer p) {
+        List<TabListEntry> data = new ArrayList<>();
         playerSlots.values().forEach(s -> data.add(s.getSlot(p)));
         return data;
-    }
-    
-    public Map<TabPlayer, PlayerSlot> getPlayers() {
-        return players;
-    }
-
-    public Map<Integer, PlayerSlot> getPlayerSlots() {
-        return playerSlots;
     }
 }

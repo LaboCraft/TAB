@@ -2,10 +2,11 @@ package me.neznamy.tab.api;
 
 import java.util.UUID;
 
-import io.netty.channel.Channel;
+import lombok.NonNull;
 import me.neznamy.tab.api.chat.IChatBaseComponent;
-import me.neznamy.tab.api.protocol.Skin;
-import me.neznamy.tab.api.protocol.TabPacket;
+import me.neznamy.tab.api.feature.Refreshable;
+import me.neznamy.tab.api.tablist.Skin;
+import me.neznamy.tab.api.tablist.TabList;
 
 /**
  * An interface representing a player
@@ -33,11 +34,11 @@ public interface TabPlayer {
 
     /**
      * Returns player's uuid used in TabList. This may only be different from real uuid if
-     * TAB is installed on velocity with some specific velocity setup
+     * TAB is installed on a proxy which does not rewrite UUIDs.
      *
      * @return  player's uuid in TabList
      */
-    UUID getTablistUUID();
+    UUID getTablistId();
 
     /**
      * Returns player's protocol version
@@ -77,36 +78,6 @@ public interface TabPlayer {
     boolean hasPermission(String permission);
 
     /**
-     * Sends the player a custom universal packet
-     *
-     * @param   packet
-     *          packet to send
-     */
-    void sendCustomPacket(TabPacket packet);
-
-    /**
-     * Sends the player a custom universal packet and adds that packet into counter that
-     * is displayed in /tab cpu
-     *
-     * @param   packet
-     *          packet to send
-     * @param   feature
-     *          feature to increment sent packet counter of
-     */
-    void sendCustomPacket(TabPacket packet, TabFeature feature);
-    
-    /**
-     * Sends the player a custom universal packet and adds that packet into counter that
-     * is displayed in /tab cpu
-     *
-     * @param   packet
-     *          packet to send
-     * @param   feature
-     *          feature to increment sent packet counter of
-     */
-    void sendCustomPacket(TabPacket packet, String feature);
-
-    /**
      * Sends the player a platform-specific packet
      *
      * @param   packet
@@ -142,13 +113,6 @@ public interface TabPlayer {
     void sendMessage(IChatBaseComponent message);
 
     /**
-     * Returns player's netty channel. On servers running version 1.7 or older returns {@code null}.
-     *
-     * @return  player's channel
-     */
-    Channel getChannel();
-
-    /**
      * Returns player's ping calculated by server
      *
      * @return  player's ping
@@ -182,7 +146,7 @@ public interface TabPlayer {
      *          new raw value
      * @return  {@code true} if value changed / did not exist, {@code false} if value did not change
      */
-    boolean setProperty(TabFeature feature, String identifier, String rawValue);
+    boolean setProperty(Refreshable feature, String identifier, String rawValue);
 
     /**
      * Loads property from config using standard property loading algorithm
@@ -191,7 +155,7 @@ public interface TabPlayer {
      *          property name to load
      * @return  {@code true} if value did not exist or changed, {@code false} otherwise
      */
-    boolean loadPropertyFromConfig(TabFeature feature, String property);
+    boolean loadPropertyFromConfig(Refreshable feature, String property);
 
     /**
      * Loads property from config using standard property loading algorithm. If the property is
@@ -203,7 +167,7 @@ public interface TabPlayer {
      *          value to use if property is not defined in config
      * @return  {@code true} if value did not exist or changed, {@code false} otherwise
      */
-    boolean loadPropertyFromConfig(TabFeature feature, String property, String ifNotSet);
+    boolean loadPropertyFromConfig(Refreshable feature, String property, String ifNotSet);
 
     /**
      * Returns name of player's scoreboard team or {@code null} if NameTag feature is disabled
@@ -211,13 +175,6 @@ public interface TabPlayer {
      * @return  name of player's team
      */
     String getTeamName();
-
-    /**
-     * Returns user-friendly explanation of team name
-     *
-     * @return  explanation behind team name
-     */
-    String getTeamNameNote();
 
     /**
      * Returns {@code true} if player is disguised using LibsDisguises, {@code false} if not
@@ -312,10 +269,31 @@ public interface TabPlayer {
     String getNickname();
 
     /**
-     * Returns player's chat message signing key. Returned object is a direct
-     * object from the server, which is different per platform.
+     * Sets header and footer to specified values
      *
-     * @return  Player's direct chat message signing key
+     * @param   header
+     *          Header to use
+     * @param   footer
+     *          Footer to use
      */
-    Object getProfilePublicKey();
+    void setPlayerListHeaderFooter(@NonNull IChatBaseComponent header, @NonNull IChatBaseComponent footer);
+
+    /**
+     * Returns scoreboard interface for calling scoreboard-related methods
+     *
+     * @return  scoreboard interface for calling scoreboard-related methods
+     */
+    Scoreboard getScoreboard();
+
+    /**
+     * Returns TabList interface for calling tablist-related methods
+     * @return  TabList interface for calling tablist-related methods
+     */
+    TabList getTabList();
+
+    /**
+     * Returns handler for calling bossbar-related methods
+     * @return  handler for calling bossbar-related methods
+     */
+    BossBarHandler getBossBarHandler();
 }

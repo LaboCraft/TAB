@@ -1,51 +1,59 @@
 package me.neznamy.tab.platforms.bukkit;
 
-import java.util.*;
-
+import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
-import me.neznamy.tab.api.protocol.PacketPlayOutChat;
-import me.neznamy.tab.api.protocol.Skin;
-import me.neznamy.tab.api.util.Preconditions;
-import org.bukkit.Bukkit;
-import org.bukkit.boss.BarColor;
-import org.bukkit.boss.BarFlag;
-import org.bukkit.boss.BarStyle;
-import org.bukkit.boss.BossBar;
+import lombok.Getter;
+import lombok.NonNull;
+import me.neznamy.tab.api.BossBarHandler;
+import me.neznamy.tab.api.Scoreboard;
+import me.neznamy.tab.api.chat.IChatBaseComponent;
+import me.neznamy.tab.api.tablist.Skin;
+import me.neznamy.tab.api.tablist.TabList;
+import me.neznamy.tab.api.util.ComponentCache;
+import me.neznamy.tab.api.util.ReflectionUtils;
+import me.neznamy.tab.platforms.bukkit.bossbar.BukkitBossBar1_8;
+import me.neznamy.tab.platforms.bukkit.bossbar.BukkitBossBar1_9;
+import me.neznamy.tab.platforms.bukkit.bossbar.BukkitBossBarVia;
+import me.neznamy.tab.platforms.bukkit.nms.datawatcher.DataWatcher;
+import me.neznamy.tab.platforms.bukkit.nms.storage.nms.NMSStorage;
+import me.neznamy.tab.platforms.bukkit.nms.storage.packet.*;
+import me.neznamy.tab.shared.TAB;
+import me.neznamy.tab.shared.backend.BackendTabPlayer;
+import me.neznamy.tab.shared.backend.EntityData;
+import me.neznamy.tab.shared.backend.Location;
+import net.md_5.bungee.api.chat.BaseComponent;
+import net.md_5.bungee.chat.ComponentSerializer;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.metadata.MetadataValue;
 import org.bukkit.potion.PotionEffectType;
 
-import com.earth2me.essentials.Essentials;
-import com.mojang.authlib.GameProfile;
-import com.viaversion.viaversion.api.Via;
-import com.viaversion.viaversion.api.legacy.bossbar.BossColor;
-import com.viaversion.viaversion.api.legacy.bossbar.BossFlag;
-import com.viaversion.viaversion.api.legacy.bossbar.BossStyle;
-
-import io.netty.channel.Channel;
-import me.neznamy.tab.api.chat.rgb.RGBUtils;
-import me.neznamy.tab.api.protocol.PacketPlayOutBoss;
-import me.neznamy.tab.platforms.bukkit.nms.NMSStorage;
-import me.neznamy.tab.shared.ITabPlayer;
-import me.neznamy.tab.shared.TAB;
+import java.util.Collection;
+import java.util.UUID;
 
 /**
  * TabPlayer implementation for Bukkit platform
  */
-public class BukkitTabPlayer extends ITabPlayer {
+@SuppressWarnings("deprecation")
+public class BukkitTabPlayer extends BackendTabPlayer {
+
+    /** Spigot check */
+    private static final boolean spigot = ReflectionUtils.classExists("org.bukkit.entity.Player$Spigot");
+
+    /** Component cache to save CPU when creating components */
+    private static final ComponentCache<IChatBaseComponent, BaseComponent[]> componentCache = new ComponentCache<>(10000,
+            (component, clientVersion) -> ComponentSerializer.parse(component.toString(clientVersion)));
 
     /** Player's NMS handle (EntityPlayer), preloading for speed */
     private Object handle;
 
     /** Player's connection for sending packets, preloading for speed */
-    private Object playerConnection;
-    
-    /** Bukkit BossBars the player can currently see */
-    private final Map<UUID, BossBar> bossBars = new HashMap<>();
+    @Getter private Object playerConnection;
 
-    /** ViaVersion BossBars this 1.9+ player can see on 1.8 server */
-    private final Map<UUID, com.viaversion.viaversion.api.legacy.bossbar.BossBar> viaBossBars = new HashMap<>();
+    @Getter private final Scoreboard scoreboard = new BukkitScoreboard(this);
+    @Getter private final TabList tabList = new BukkitTabList(this);
+    @Getter private final BossBarHandler bossBarHandler = TAB.getInstance().getServerVersion().getMinorVersion() >= 9 ?
+            new BukkitBossBar1_9(this) : getVersion().getMinorVersion() >= 9 ? new BukkitBossBarVia(this) : new BukkitBossBar1_8(this);
 
     /**
      * Constructs new instance with given bukkit player and protocol version
@@ -55,8 +63,8 @@ public class BukkitTabPlayer extends ITabPlayer {
      * @param   protocolVersion
      *          Player's protocol network id
      */
-    public BukkitTabPlayer(Player p, int protocolVersion){
-        super(p, p.getUniqueId(), p.getName(), "N/A", p.getWorld().getName(), protocolVersion, true);
+    public BukkitTabPlayer(Player p, int protocolVersion) {
+        super(p, p.getUniqueId(), p.getName(), TAB.getInstance().getConfiguration().getServerName(), p.getWorld().getName(), protocolVersion);
         try {
             handle = NMSStorage.getInstance().getHandle.invoke(player);
             playerConnection = NMSStorage.getInstance().PLAYER_CONNECTION.get(handle);
@@ -66,12 +74,8 @@ public class BukkitTabPlayer extends ITabPlayer {
     }
 
     @Override
-    public boolean hasPermission(String permission) {
-        Preconditions.checkNotNull(permission, "permission");
-        long time = System.nanoTime();
-        boolean value = getPlayer().hasPermission(permission);
-        TAB.getInstance().getCPUManager().addMethodTime("hasPermission", System.nanoTime()-time);
-        return value;
+    public boolean hasPermission(@NonNull String permission) {
+        return getPlayer().hasPermission(permission);
     }
 
     @Override
@@ -88,150 +92,20 @@ public class BukkitTabPlayer extends ITabPlayer {
     @Override
     public void sendPacket(Object nmsPacket) {
         if (nmsPacket == null || !getPlayer().isOnline()) return;
-        long time = System.nanoTime();
         try {
-            if (nmsPacket instanceof PacketPlayOutBoss) {
-                if (TAB.getInstance().getServerVersion().getMinorVersion() >= 9) {
-                    handle((PacketPlayOutBoss) nmsPacket);
-                } else {
-                    handleVia((PacketPlayOutBoss) nmsPacket);
-                }
-            } else if (nmsPacket instanceof PacketPlayOutChat) {
-                getPlayer().sendMessage(((PacketPlayOutChat) nmsPacket).getMessage().toLegacyText());
-            } else {
-                NMSStorage.getInstance().sendPacket.invoke(playerConnection, nmsPacket);
-            }
+            NMSStorage.getInstance().sendPacket.invoke(playerConnection, nmsPacket);
         } catch (ReflectiveOperationException e) {
             TAB.getInstance().getErrorManager().printError("An error occurred when sending " + nmsPacket.getClass().getSimpleName(), e);
         }
-        TAB.getInstance().getCPUManager().addMethodTime("sendPacket", System.nanoTime()-time);
     }
 
-    /**
-     * Handles PacketPlayOutBoss packet send request using Bukkit API,
-     * since the API offers everything we need and makes us not need to
-     * deal with NMS code at all.
-     *
-     * @param   packet
-     *          packet request to handle using Bukkit API
-     */
-    private void handle(PacketPlayOutBoss packet) {
-        BossBar bar = bossBars.get(packet.getId());
-        if (packet.getAction() == PacketPlayOutBoss.Action.ADD) {
-            if (bossBars.containsKey(packet.getId())) return;
-            bar = Bukkit.createBossBar(RGBUtils.getInstance().convertToBukkitFormat(packet.getName(), getVersion().getMinorVersion() >= 16 && TAB.getInstance().getServerVersion().getMinorVersion() >= 16),
-                    BarColor.valueOf(packet.getColor().name()),
-                    BarStyle.valueOf(packet.getOverlay().getBukkitName()));
-            if (packet.isCreateWorldFog()) bar.addFlag(BarFlag.CREATE_FOG);
-            if (packet.isDarkenScreen()) bar.addFlag(BarFlag.DARKEN_SKY);
-            if (packet.isPlayMusic()) bar.addFlag(BarFlag.PLAY_BOSS_MUSIC);
-            bar.setProgress(packet.getPct());
-            bossBars.put(packet.getId(), bar);
-            bar.addPlayer(getPlayer());
-            return;
+    @Override
+    public void sendMessage(IChatBaseComponent message) {
+        if (spigot) {
+            getPlayer().spigot().sendMessage(componentCache.get(message, version));
+        } else {
+            getPlayer().sendMessage(message.toLegacyText());
         }
-        if (bar == null) return; //no idea how
-        switch (packet.getAction()) {
-        case REMOVE:
-            bar.removePlayer(getPlayer());
-            bossBars.remove(packet.getId());
-            break;
-        case UPDATE_PCT:
-            bar.setProgress(packet.getPct());
-            break;
-        case UPDATE_NAME:
-            bar.setTitle(RGBUtils.getInstance().convertToBukkitFormat(packet.getName(), getVersion().getMinorVersion() >= 16 && TAB.getInstance().getServerVersion().getMinorVersion() >= 16));
-            break;
-        case UPDATE_STYLE:
-            bar.setColor(BarColor.valueOf(packet.getColor().name()));
-            bar.setStyle(BarStyle.valueOf(packet.getOverlay().getBukkitName()));
-            break;
-        case UPDATE_PROPERTIES:
-            bar = bossBars.get(packet.getId());
-            processFlag(bar, packet.isCreateWorldFog(), BarFlag.CREATE_FOG);
-            processFlag(bar, packet.isDarkenScreen(), BarFlag.DARKEN_SKY);
-            processFlag(bar, packet.isPlayMusic(), BarFlag.PLAY_BOSS_MUSIC);
-            break;
-        default:
-            break;
-        }
-    }
-
-    /**
-     * Handles PacketPlayOutBoss packet request for 1.9+ clients on
-     * 1.8 servers using ViaVersion API instead of using Wither.
-     *
-     * @param   packet
-     *          packet request to handle using ViaVersion API
-     */
-    private void handleVia(PacketPlayOutBoss packet) {
-        com.viaversion.viaversion.api.legacy.bossbar.BossBar bar;
-        switch (packet.getAction()) {
-        case ADD:
-            if (viaBossBars.containsKey(packet.getId())) return;
-            bar = Via.getAPI().legacyAPI().createLegacyBossBar(RGBUtils.getInstance().convertToBukkitFormat(packet.getName(), getVersion().getMinorVersion() >= 16), 
-                    packet.getPct(),
-                    BossColor.valueOf(packet.getColor().name()), 
-                    BossStyle.valueOf(packet.getOverlay().getBukkitName()));
-            //fog missing from via API
-            if (packet.isDarkenScreen()) bar.addFlag(BossFlag.DARKEN_SKY);
-            if (packet.isPlayMusic()) bar.addFlag(BossFlag.PLAY_BOSS_MUSIC);
-            viaBossBars.put(packet.getId(), bar);
-            bar.addPlayer(getPlayer().getUniqueId());
-            break;
-        case REMOVE:
-            viaBossBars.get(packet.getId()).removePlayer(getPlayer().getUniqueId());
-            viaBossBars.remove(packet.getId());
-            break;
-        case UPDATE_PCT:
-            viaBossBars.get(packet.getId()).setHealth(packet.getPct());
-            break;
-        case UPDATE_NAME:
-            viaBossBars.get(packet.getId()).setTitle(RGBUtils.getInstance().convertToBukkitFormat(packet.getName(), getVersion().getMinorVersion() >= 16));
-            break;
-        case UPDATE_STYLE:
-            viaBossBars.get(packet.getId()).setColor(BossColor.valueOf(packet.getColor().name()));
-            viaBossBars.get(packet.getId()).setStyle(BossStyle.valueOf(packet.getOverlay().getBukkitName()));
-            break;
-        case UPDATE_PROPERTIES:
-            bar = viaBossBars.get(packet.getId());
-            //fog missing from via API
-            processFlagVia(bar, packet.isDarkenScreen(), BossFlag.DARKEN_SKY);
-            processFlagVia(bar, packet.isPlayMusic(), BossFlag.PLAY_BOSS_MUSIC);
-            break;
-        default:
-            break;
-        }
-    }
-
-    /**
-     * Sets BossBar flag to requested target value.
-     *
-     * @param   bar
-     *          BossBar to set flag of
-     * @param   targetValue
-     *          Target value of the flag
-     * @param   flag
-     *          Flag to set value of
-     */
-    private void processFlag(BossBar bar, boolean targetValue, BarFlag flag) {
-        if (targetValue && !bar.hasFlag(flag)) bar.addFlag(flag);
-        if (!targetValue && bar.hasFlag(flag)) bar.removeFlag(flag);
-    }
-
-    /**
-     * Sets BossBar flag to requested target value.
-     *
-     * @param   bar
-     *          BossBar to set flag of
-     * @param   targetValue
-     *          Target value of the flag
-     * @param   flag
-     *          Flag to set value of
-     */
-    private void processFlagVia(com.viaversion.viaversion.api.legacy.bossbar.BossBar bar, boolean targetValue, BossFlag flag) {
-        if (targetValue && !bar.hasFlag(flag)) bar.addFlag(flag);
-        if (!targetValue && bar.hasFlag(flag)) bar.removeFlag(flag);
     }
 
     @Override
@@ -255,7 +129,7 @@ public class BukkitTabPlayer extends ITabPlayer {
     @Override
     public Skin getSkin() {
         try {
-            Collection<Property> col = ((GameProfile)NMSStorage.getInstance().getProfile.invoke(handle)).getProperties().get("textures");
+            Collection<Property> col = ((GameProfile)NMSStorage.getInstance().getProfile.invoke(handle)).getProperties().get(TabList.TEXTURES_PROPERTY);
             if (col.isEmpty()) return null; //offline mode
             Property property = col.iterator().next();
             return new Skin(property.getValue(), property.getSignature());
@@ -277,39 +151,84 @@ public class BukkitTabPlayer extends ITabPlayer {
 
     @Override
     public boolean isVanished() {
-        Essentials essentials = ((BukkitPlatform)TAB.getInstance().getPlatform()).getEssentials();
-        if (essentials != null && essentials.getUser(getUniqueId()).isVanished()) return true;
-        List<MetadataValue> metadata = getPlayer().getMetadata("vanished");
-        return !metadata.isEmpty() && metadata.get(0).asBoolean();
+        return getPlayer().getMetadata("vanished").stream().anyMatch(MetadataValue::asBoolean);
     }
 
-    @SuppressWarnings("deprecation")
     @Override
     public int getGamemode() {
         return getPlayer().getGameMode().getValue();
     }
 
     @Override
-    public Object getProfilePublicKey() {
-        if (NMSStorage.getInstance().getMinorVersion() < 19) return null;
+    public void setPlayerListHeaderFooter(@NonNull IChatBaseComponent header, @NonNull IChatBaseComponent footer) {
+        // Method was added to Bukkit API in 1.13.1, however despite that it's just a String one
+        // Using it would cause high CPU usage and massive memory allocations on RGB & animations
+        // Send packet instead for performance & older server version support
+
+        /*if (TAB.getInstance().getServerVersion().getNetworkId() >= ProtocolVersion.V1_13_1.getNetworkId()) {
+            String bukkitHeader = RGBUtils.getInstance().convertToBukkitFormat(header.toFlatText(),
+                    getVersion().getMinorVersion() >= 16 && TAB.getInstance().getServerVersion().getMinorVersion() >= 16);
+            String bukkitFooter = RGBUtils.getInstance().convertToBukkitFormat(footer.toFlatText(),
+                    getVersion().getMinorVersion() >= 16 && TAB.getInstance().getServerVersion().getMinorVersion() >= 16);
+            getPlayer().setPlayerListHeaderFooter(bukkitHeader, bukkitFooter);
+            return;
+        }*/
+
         try {
-            Object key = NMSStorage.getInstance().EntityHuman_ProfilePublicKey.get(handle);
-            if (key == null) return null;
-            return NMSStorage.getInstance().ProfilePublicKey_getRecord.invoke(key);
+            sendPacket(PacketPlayOutPlayerListHeaderFooterStorage.build(header, footer, version));
         } catch (ReflectiveOperationException e) {
-            TAB.getInstance().getErrorManager().printError("Failed to get profile key of " + getName(), e);
-            return null;
+            throw new RuntimeException(e);
         }
     }
 
     @Override
-    public Channel getChannel() {
+    public void spawnEntity(int entityId, UUID id, Object entityType, Location location, EntityData data) {
         try {
-            if (NMSStorage.getInstance().CHANNEL != null)
-                return (Channel) NMSStorage.getInstance().CHANNEL.get(NMSStorage.getInstance().NETWORK_MANAGER.get(playerConnection));
-        } catch (IllegalAccessException e) {
-            TAB.getInstance().getErrorManager().printError("Failed to get channel of " + getName(), e);
+            sendPacket(PacketPlayOutSpawnEntityLivingStorage.build(entityId, id, entityType, location, data));
+            if (TAB.getInstance().getServerVersion().getMinorVersion() >= 15) {
+                updateEntityMetadata(entityId, data);
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
         }
-        return null;
+    }
+
+    @Override
+    public void updateEntityMetadata(int entityId, EntityData data) {
+        try {
+            if (PacketPlayOutEntityMetadataStorage.CONSTRUCTOR.getParameterCount() == 2) {
+                //1.19.3+
+                sendPacket(PacketPlayOutEntityMetadataStorage.CONSTRUCTOR.newInstance(entityId, DataWatcher.packDirty.invoke(data.build())));
+            } else {
+                sendPacket(PacketPlayOutEntityMetadataStorage.CONSTRUCTOR.newInstance(entityId, data.build(), true));
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void teleportEntity(int entityId, Location location) {
+        try {
+            sendPacket(PacketPlayOutEntityTeleportStorage.build(entityId, location));
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void destroyEntities(int... entities) {
+        try {
+            if (PacketPlayOutEntityDestroyStorage.CONSTRUCTOR.getParameterTypes()[0] != int.class) {
+                sendPacket(PacketPlayOutEntityDestroyStorage.CONSTRUCTOR.newInstance(new Object[]{entities}));
+            } else {
+                //1.17.0 Mojank
+                for (int entity : entities) {
+                    sendPacket(PacketPlayOutEntityDestroyStorage.CONSTRUCTOR.newInstance(entity));
+                }
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

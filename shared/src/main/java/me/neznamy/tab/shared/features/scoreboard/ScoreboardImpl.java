@@ -1,45 +1,45 @@
 package me.neznamy.tab.shared.features.scoreboard;
 
-import java.util.*;
-
-import me.neznamy.tab.api.TabFeature;
+import lombok.Getter;
+import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.api.feature.Refreshable;
+import me.neznamy.tab.api.feature.TabFeature;
 import me.neznamy.tab.api.TabPlayer;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardDisplayObjective;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardObjective;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardScore;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardObjective.EnumScoreboardHealthDisplay;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardScore.Action;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardTeam;
 import me.neznamy.tab.api.scoreboard.Line;
 import me.neznamy.tab.api.scoreboard.Scoreboard;
-import me.neznamy.tab.api.TabConstants;
 import me.neznamy.tab.shared.TAB;
-import me.neznamy.tab.shared.features.TabExpansion;
 import me.neznamy.tab.shared.features.scoreboard.lines.*;
 import me.neznamy.tab.shared.placeholders.conditions.Condition;
+
+import java.util.*;
 
 /**
  * A class representing a scoreboard configured in config
  */
-public class ScoreboardImpl extends TabFeature implements Scoreboard {
+public class ScoreboardImpl extends TabFeature implements Scoreboard, Refreshable {
+
+    @Getter private final String featureName = "Scoreboard";
+    @Getter private final String refreshDisplayName = "Updating Scoreboard title";
 
     //scoreboard manager
-    private final ScoreboardManagerImpl manager;
+    @Getter private final ScoreboardManagerImpl manager;
 
     //name of this scoreboard
-    private final String name;
+    @Getter private final String name;
 
     //scoreboard title
-    private String title;
+    @Getter private String title;
 
     //display condition
     private Condition displayCondition;
 
     //lines of scoreboard
-    private final List<Line> lines = new ArrayList<>();
+    @Getter private final List<Line> lines = new ArrayList<>();
 
     //players currently seeing this scoreboard
-    private final Set<TabPlayer> players = Collections.newSetFromMap(new WeakHashMap<>());
+    @Getter private final Set<TabPlayer> players = Collections.newSetFromMap(new WeakHashMap<>());
+
+    private final String titleProperty;
 
     /**
      * Constructs new instance with given parameters and registers lines to feature manager
@@ -76,10 +76,10 @@ public class ScoreboardImpl extends TabFeature implements Scoreboard {
      *          lines of scoreboard
      */
     public ScoreboardImpl(ScoreboardManagerImpl manager, String name, String title, List<String> lines, boolean dynamicLinesOnly) {
-        super(manager.getFeatureName(), "Updating scoreboard title");
         this.manager = manager;
         this.name = name;
         this.title = title;
+        this.titleProperty = getName() + "-" + TabConstants.Property.SCOREBOARD_TITLE;
         for (int i=0; i<lines.size(); i++) {
             ScoreboardLine score;
             if (dynamicLinesOnly) {
@@ -116,11 +116,6 @@ public class ScoreboardImpl extends TabFeature implements Scoreboard {
         return new StaticLine(this, lineNumber, text);
     }
 
-    @Override
-    public String getName() {
-        return name;
-    }
-
     /**
      * Returns true if condition is null or is met, false otherwise
      *
@@ -135,17 +130,15 @@ public class ScoreboardImpl extends TabFeature implements Scoreboard {
     public void addPlayer(TabPlayer p) {
         if (players.contains(p)) return; //already registered
         players.add(p);
-        p.setProperty(this, TabConstants.Property.SCOREBOARD_TITLE, title);
-        p.sendCustomPacket(new PacketPlayOutScoreboardObjective(0, ScoreboardManagerImpl.OBJECTIVE_NAME, p.getProperty(TabConstants.Property.SCOREBOARD_TITLE).get(),
-                EnumScoreboardHealthDisplay.INTEGER), TabConstants.PacketCategory.SCOREBOARD_TITLE);
-        p.sendCustomPacket(new PacketPlayOutScoreboardDisplayObjective(ScoreboardManagerImpl.DISPLAY_SLOT, ScoreboardManagerImpl.OBJECTIVE_NAME), TabConstants.PacketCategory.SCOREBOARD_TITLE);
+        p.setProperty(this, titleProperty, title);
+        p.getScoreboard().registerObjective(ScoreboardManagerImpl.OBJECTIVE_NAME, p.getProperty(titleProperty).get(), false);
+        p.getScoreboard().setDisplaySlot(me.neznamy.tab.api.Scoreboard.DisplaySlot.SIDEBAR, ScoreboardManagerImpl.OBJECTIVE_NAME);
         for (Line s : lines) {
             ((ScoreboardLine)s).register(p);
         }
         manager.getActiveScoreboards().put(p, this);
         recalculateScores(p);
-        TabExpansion expansion = TAB.getInstance().getPlaceholderManager().getTabExpansion();
-        if (expansion != null) expansion.setScoreboardName(p, name);
+        TAB.getInstance().getPlaceholderManager().getTabExpansion().setScoreboardName(p, name);
     }
 
     @Override
@@ -158,46 +151,27 @@ public class ScoreboardImpl extends TabFeature implements Scoreboard {
 
     public void removePlayer(TabPlayer p) {
         if (!players.contains(p)) return; //not registered
-        p.sendCustomPacket(new PacketPlayOutScoreboardObjective(ScoreboardManagerImpl.OBJECTIVE_NAME), this);
+        p.getScoreboard().unregisterObjective(ScoreboardManagerImpl.OBJECTIVE_NAME);
         for (Line line : lines) {
-            p.sendCustomPacket(new PacketPlayOutScoreboardTeam(((ScoreboardLine)line).getTeamName()), TabConstants.PacketCategory.SCOREBOARD_LINES);
+            if (((ScoreboardLine)line).isShownTo(p))
+                p.getScoreboard().unregisterTeam(((ScoreboardLine)line).getTeamName());
         }
         players.remove(p);
         manager.getActiveScoreboards().remove(p);
-        TabExpansion expansion = TAB.getInstance().getPlaceholderManager().getTabExpansion();
-        if (expansion != null) expansion.setScoreboardName(p, "");
+        TAB.getInstance().getPlaceholderManager().getTabExpansion().setScoreboardName(p, "");
     }
 
     @Override
     public void refresh(TabPlayer refreshed, boolean force) {
-        if (refreshed.getProperty(TabConstants.Property.SCOREBOARD_TITLE) == null) return;
-        refreshed.sendCustomPacket(new PacketPlayOutScoreboardObjective(2, ScoreboardManagerImpl.OBJECTIVE_NAME, 
-                refreshed.getProperty(TabConstants.Property.SCOREBOARD_TITLE).updateAndGet(), EnumScoreboardHealthDisplay.INTEGER), TabConstants.PacketCategory.SCOREBOARD_TITLE);
-    }
-
-    @Override
-    public List<Line> getLines() {
-        return lines;
-    }
-
-    public Set<TabPlayer> getPlayers() {
-        return players;
-    }
-
-    public ScoreboardManagerImpl getManager() {
-        return manager;
-    }
-
-    @Override
-    public String getTitle() {
-        return title;
+        if (!players.contains(refreshed)) return;
+        refreshed.getScoreboard().updateObjective(ScoreboardManagerImpl.OBJECTIVE_NAME, refreshed.getProperty(titleProperty).updateAndGet(), false);
     }
 
     @Override
     public void setTitle(String title) {
         this.title = title;
         for (TabPlayer p : players) {
-            p.setProperty(this, TabConstants.Property.SCOREBOARD_TITLE, title);
+            p.setProperty(this, titleProperty, title);
             refresh(p, false);
         }
     }
@@ -235,9 +209,13 @@ public class ScoreboardImpl extends TabFeature implements Scoreboard {
                 score++;
                 continue;
             }
-            if (line instanceof StaticLine || p.getProperty(getName() + "-" + ((ScoreboardLine)line).getTeamName()).get().length() > 0){
-                p.sendCustomPacket(new PacketPlayOutScoreboardScore(Action.CHANGE, ScoreboardManagerImpl.OBJECTIVE_NAME, ((ScoreboardLine)line).getPlayerName(p), score++), this);
+            if (line instanceof StaticLine || p.getProperty(getName() + "-" + ((ScoreboardLine)line).getTeamName()).get().length() > 0) {
+                p.getScoreboard().setScore(ScoreboardManagerImpl.OBJECTIVE_NAME, ((ScoreboardLine)line).getPlayerName(p), score++);
             }
         }
+    }
+
+    public void removePlayerFromSet(TabPlayer player) {
+        players.remove(player);
     }
 }

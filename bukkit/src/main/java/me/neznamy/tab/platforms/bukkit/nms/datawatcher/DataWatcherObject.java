@@ -1,34 +1,55 @@
 package me.neznamy.tab.platforms.bukkit.nms.datawatcher;
 
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import me.neznamy.tab.platforms.bukkit.nms.storage.nms.NMSStorage;
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+
 /**
  * A class representing the n.m.s.DataWatcherObject class to make work with it much easier
  */
+@Data @AllArgsConstructor
 public class DataWatcherObject {
 
-    //position in DataWatcher
-    private final int position;
+    /** NMS Fields */
+    public static Class<?> CLASS;
+    public static Constructor<?> CONSTRUCTOR;
+    public static Field SLOT;
+    public static Field SERIALIZER;
     
-    //value class type used since 1.9
-    private final Object classType;
+    /** Instance fields */
+    private final int position;
+    private final Object serializer;
 
     /**
-     * Constructs a new instance of this class with given parameters
+     * Loads all required Fields and throws Exception if something went wrong
      *
-     * @param   position
-     *          position in DataWatcher
-     * @param   classType
-     *          value class type
+     * @param   nms
+     *          NMS storage reference
+     * @throws  NoSuchMethodException
+     *          If something fails
      */
-    public DataWatcherObject(int position, Object classType){
-        this.position = position;
-        this.classType = classType;
+    public static void load(NMSStorage nms) throws NoSuchMethodException {
+        if (nms.getMinorVersion() < 9) return;
+        CONSTRUCTOR = CLASS.getConstructor(int.class, DataWatcherHelper.DataWatcherSerializer);
+        SLOT = nms.getFields(CLASS, int.class).get(0);
+        SERIALIZER = nms.getFields(CLASS, DataWatcherHelper.DataWatcherSerializer).get(0);
     }
 
-    public int getPosition() {
-        return position;
-    }
-
-    public Object getClassType() {
-        return classType;
+    /**
+     * Converts the object into NMS object
+     *
+     * @return  NMS object
+     * @throws  ReflectiveOperationException
+     *          If thrown by reflective operation
+     */
+    public Object build() throws ReflectiveOperationException {
+        if (NMSStorage.getInstance().getMinorVersion() >= 9) {
+            return DataWatcherObject.CONSTRUCTOR.newInstance(position, serializer);
+        } else {
+            return position;
+        }
     }
 }

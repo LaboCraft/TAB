@@ -4,7 +4,7 @@ import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.function.BiFunction;
 
-import me.neznamy.tab.api.TabFeature;
+import me.neznamy.tab.api.feature.Refreshable;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.chat.EnumChatFormat;
 import me.neznamy.tab.api.placeholder.RelationalPlaceholder;
@@ -27,7 +27,8 @@ public class RelationalPlaceholderImpl extends TabPlaceholder implements Relatio
      * @param   identifier
      *          placeholder identifier, must start with {@code %rel_} and end with {@code %}
      * @param   refresh
-     *          refresh interval in milliseconds, must be divisible by 50 or equal to -1 for trigger placeholders
+     *          refresh interval in milliseconds, must be divisible by {@link me.neznamy.tab.api.TabConstants.Placeholder#MINIMUM_REFRESH_INTERVAL}
+     *          or equal to -1 to disable automatic refreshing
      * @param   function
      *          refresh function which returns new up-to-date output on request
      */
@@ -77,9 +78,9 @@ public class RelationalPlaceholderImpl extends TabPlaceholder implements Relatio
         String s = getReplacements().findReplacement(String.valueOf(value));
         if (lastValues.computeIfAbsent(viewer, v -> new WeakHashMap<>()).containsKey(target) && lastValues.get(viewer).get(target).equals(s) && !force) return;
         lastValues.get(viewer).put(target, s);
-        Set<TabFeature> usage = TAB.getInstance().getPlaceholderManager().getPlaceholderUsage().get(identifier);
+        Set<Refreshable> usage = TAB.getInstance().getPlaceholderManager().getPlaceholderUsage().get(identifier);
         if (usage == null) return;
-        for (TabFeature f : usage) {
+        for (Refreshable f : usage) {
             long time = System.nanoTime();
             f.refresh(viewer, true);
             f.refresh(target, true);

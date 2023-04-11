@@ -1,22 +1,28 @@
 package me.neznamy.tab.platforms.bukkit;
 
-import com.earth2me.essentials.Essentials;
-import com.viaversion.viaversion.api.Via;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import me.clip.placeholderapi.PlaceholderAPI;
+import me.neznamy.tab.api.ProtocolVersion;
+import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.api.feature.TabFeature;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.chat.EnumChatFormat;
-import me.neznamy.tab.platforms.bukkit.event.TabLoadEvent;
-import me.neznamy.tab.platforms.bukkit.event.TabPlayerLoadEvent;
+import me.neznamy.tab.api.chat.rgb.RGBUtils;
+import me.neznamy.tab.api.util.ReflectionUtils;
 import me.neznamy.tab.platforms.bukkit.features.BukkitTabExpansion;
 import me.neznamy.tab.platforms.bukkit.features.PerWorldPlayerList;
 import me.neznamy.tab.platforms.bukkit.features.PetFix;
 import me.neznamy.tab.platforms.bukkit.features.WitherBossBar;
 import me.neznamy.tab.platforms.bukkit.features.unlimitedtags.BukkitNameTagX;
+import me.neznamy.tab.platforms.bukkit.nms.storage.nms.NMSStorage;
 import me.neznamy.tab.platforms.bukkit.permission.Vault;
-import me.neznamy.tab.shared.Platform;
 import me.neznamy.tab.shared.TAB;
-import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.shared.backend.BackendPlatform;
 import me.neznamy.tab.shared.features.PlaceholderManagerImpl;
+import me.neznamy.tab.shared.placeholders.expansion.EmptyTabExpansion;
+import me.neznamy.tab.shared.placeholders.expansion.TabExpansion;
 import me.neznamy.tab.shared.features.bossbar.BossBarManagerImpl;
 import me.neznamy.tab.shared.features.nametags.NameTag;
 import me.neznamy.tab.shared.permission.LuckPerms;
@@ -29,34 +35,27 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 
 /**
  * Implementation of Platform interface for Bukkit platform
  */
-public class BukkitPlatform extends Platform {
+@RequiredArgsConstructor
+public class BukkitPlatform extends BackendPlatform {
+
+    @Getter private final BukkitPipelineInjector pipelineInjector = NMSStorage.getInstance().getMinorVersion() >= 8 ? new BukkitPipelineInjector() : null;
 
     /** Plugin instance for registering tasks and events */
     private final JavaPlugin plugin;
 
     /** Variables checking presence of other plugins to hook into */
     private final boolean placeholderAPI = Bukkit.getPluginManager().isPluginEnabled(TabConstants.Plugin.PLACEHOLDER_API);
-    private boolean libsDisguises = Bukkit.getPluginManager().isPluginEnabled(TabConstants.Plugin.LIBS_DISGUISES);
-    private final Plugin essentials = Bukkit.getPluginManager().getPlugin(TabConstants.Plugin.ESSENTIALS);
-    private Plugin viaVersion;
+    @Getter @Setter private boolean libsDisguisesEnabled = Bukkit.getPluginManager().isPluginEnabled(TabConstants.Plugin.LIBS_DISGUISES);
+    private final boolean viaVersion = ReflectionUtils.classExists("com.viaversion.viaversion.api.Via");
     private final boolean protocolSupport = Bukkit.getPluginManager().isPluginEnabled(TabConstants.Plugin.PROTOCOL_SUPPORT);
-
-    /**
-     * Constructs new instance with given plugin parameter
-     *
-     * @param   plugin
-     *          plugin instance
-     */
-    public BukkitPlatform(JavaPlugin plugin) {
-        super(new BukkitPacketBuilder());
-        this.plugin = plugin;
-    }
 
     @Override
     public PermissionPlugin detectPermissionPlugin() {
@@ -71,55 +70,51 @@ public class BukkitPlatform extends Platform {
         }
     }
 
-    @Override
-    public void loadFeatures() {
-        if (Bukkit.getPluginManager().isPluginEnabled(TabConstants.Plugin.VIAVERSION)) {
-            try {
-                Class.forName("com.viaversion.viaversion.api.Via");
-                viaVersion = Bukkit.getPluginManager().getPlugin(TabConstants.Plugin.VIAVERSION);
-            } catch (ClassNotFoundException e) {
-                TAB.getInstance().sendConsoleMessage("&cAn outdated version of ViaVersion (" + getPluginVersion(TabConstants.Plugin.VIAVERSION) + ") was detected.", true);
-                TAB.getInstance().sendConsoleMessage("&cTAB only supports ViaVersion 4.0.0 and above. Disabling ViaVersion hook.", true);
-                TAB.getInstance().sendConsoleMessage("&cThis might cause problems, such as limitations still being present for latest MC clients as well as RGB not working.", true);
-            }
-        }
-        TAB tab = TAB.getInstance();
-        if (tab.getConfiguration().isPipelineInjection())
-            tab.getFeatureManager().registerFeature(TabConstants.Feature.PIPELINE_INJECTION, new BukkitPipelineInjector());
-        new BukkitPlaceholderRegistry(plugin).registerPlaceholders(tab.getPlaceholderManager());
-        if (tab.getConfiguration().getConfig().getBoolean("scoreboard-teams.enabled", true)) {
-            if (tab.getConfiguration().getConfig().getBoolean("scoreboard-teams.unlimited-nametag-mode.enabled", false) && tab.getServerVersion().getMinorVersion() >= 8) {
-                tab.getFeatureManager().registerFeature(TabConstants.Feature.UNLIMITED_NAME_TAGS, new BukkitNameTagX(plugin));
-            } else {
-                tab.getFeatureManager().registerFeature(TabConstants.Feature.NAME_TAGS, new NameTag());
-            }
-        }
-        tab.loadUniversalFeatures();
-        if (tab.getConfiguration().getConfig().getBoolean("bossbar.enabled", false)) {
-            if (tab.getServerVersion().getMinorVersion() < 9) {
-                tab.getFeatureManager().registerFeature(TabConstants.Feature.BOSS_BAR, new WitherBossBar(plugin));
-            } else {
-                tab.getFeatureManager().registerFeature(TabConstants.Feature.BOSS_BAR, new BossBarManagerImpl());
-            }
-        }
-        if (tab.getServerVersion().getMinorVersion() >= 9 && tab.getConfiguration().getConfig().getBoolean("fix-pet-names.enabled", false))
-            tab.getFeatureManager().registerFeature(TabConstants.Feature.PET_FIX, new PetFix());
-        if (tab.getConfiguration().getConfig().getBoolean("per-world-playerlist.enabled", false))
-            tab.getFeatureManager().registerFeature(TabConstants.Feature.PER_WORLD_PLAYER_LIST, new PerWorldPlayerList(plugin));
-        if (placeholderAPI && tab.getConfiguration().getConfig().getBoolean("placeholders.register-tab-expansion", true)) {
-            BukkitTabExpansion expansion = new BukkitTabExpansion();
-            expansion.register();
-            TAB.getInstance().getPlaceholderManager().setTabExpansion(expansion);
-        }
-        for (Player p : getOnlinePlayers()) {
-            tab.addPlayer(new BukkitTabPlayer(p, getProtocolVersion(p)));
-        }
+    public BossBarManagerImpl getLegacyBossBar() {
+        return new WitherBossBar(plugin);
     }
 
     @Override
     public String getPluginVersion(String plugin) {
         Plugin pl = Bukkit.getPluginManager().getPlugin(plugin);
         return pl == null ? null : pl.getDescription().getVersion();
+    }
+
+    @Override
+    public void loadPlayers() {
+        for (Player p : getOnlinePlayers()) {
+            TAB.getInstance().addPlayer(new BukkitTabPlayer(p, getProtocolVersion(p)));
+        }
+    }
+
+    @Override
+    public void registerPlaceholders() {
+        new BukkitPlaceholderRegistry().registerPlaceholders(TAB.getInstance().getPlaceholderManager());
+    }
+
+    @Override
+    public NameTag getUnlimitedNametags() {
+        return new BukkitNameTagX(plugin);
+    }
+
+    @Override
+    public @NotNull TabExpansion getTabExpansion() {
+        if (placeholderAPI) {
+            BukkitTabExpansion expansion = new BukkitTabExpansion();
+            expansion.register();
+            return expansion;
+        }
+        return new EmptyTabExpansion();
+    }
+
+    @Override
+    public TabFeature getPetFix() {
+        return new PetFix();
+    }
+
+    @Override
+    public @Nullable TabFeature getPerWorldPlayerlist() {
+        return new PerWorldPlayerList(plugin);
     }
 
     /**
@@ -182,51 +177,6 @@ public class BukkitPlatform extends Platform {
         }
     }
 
-    @Override
-    public void callLoadEvent() {
-        Bukkit.getPluginManager().callEvent(new TabLoadEvent());
-    }
-
-    @Override
-    public void callLoadEvent(TabPlayer player) {
-        Bukkit.getScheduler().scheduleSyncDelayedTask(plugin, () -> Bukkit.getPluginManager().callEvent(new TabPlayerLoadEvent(player)));
-    }
-
-    /**
-     * Returns status of LibsDisguises plugin presence
-     *
-     * @return  {@code true} if plugin is enabled, {@code false} if not
-     */
-    public boolean isLibsDisguisesEnabled() {
-        return libsDisguises;
-    }
-
-    /**
-     * Sets LibsDisguises presence status to provided value. This is used
-     * to disable LibsDisguises hook in case the plugin is not correctly loaded
-     * for any reason to avoid error spam in the hook.
-     *
-     * @param   enabled
-     *          New status of LibsDisguises presence
-     */
-    public void setLibsDisguisesEnabled(boolean enabled) {
-        libsDisguises = enabled;
-    }
-
-    /**
-     * Returns Essentials' main class if the plugin is installed, {@code null} if not
-     *
-     * @return  Essentials instance or {@code null} if plugin is not installed
-     */
-    public Essentials getEssentials() {
-        return (Essentials) essentials;
-    }
-
-    @Override
-    public String getConfigName() {
-        return "bukkitconfig.yml";
-    }
-
     /**
      * Gets protocol version of requested player and returns it.
      *
@@ -235,13 +185,13 @@ public class BukkitPlatform extends Platform {
      * @return  protocol version of the player
      */
     public int getProtocolVersion(Player player) {
-        if (protocolSupport){
+        if (protocolSupport) {
             int version = getProtocolVersionPS(player);
             //some PS versions return -1 on unsupported server versions instead of throwing exception
             if (version != -1 && version < TAB.getInstance().getServerVersion().getNetworkId()) return version;
         }
-        if (viaVersion != null) {
-            return getProtocolVersionVia(player, 0);
+        if (viaVersion) {
+            return ProtocolVersion.getPlayerVersionVia(player.getUniqueId(), player.getName());
         }
         return TAB.getInstance().getServerVersion().getNetworkId();
     }
@@ -253,7 +203,7 @@ public class BukkitPlatform extends Platform {
      *          Player to get protocol version of
      * @return  protocol version of the player using ProtocolSupport
      */
-    private int getProtocolVersionPS(Player player){
+    private int getProtocolVersionPS(Player player) {
         try {
             Object protocolVersion = Class.forName("protocolsupport.api.ProtocolSupportAPI").getMethod("getProtocolVersion", Player.class).invoke(null, player);
             int version = (int) protocolVersion.getClass().getMethod("getId").invoke(protocolVersion);
@@ -266,38 +216,9 @@ public class BukkitPlatform extends Platform {
     }
 
     /**
-     * Returns protocol version of requested player using ViaVersion
-     *
-     * @param   player
-     *          Player to get protocol version of
-     * @return  protocol version of the player using ViaVersion
-     */
-    private int getProtocolVersionVia(Player player, int retryLevel){
-        try {
-            if (retryLevel == 10) {
-                TAB.getInstance().debug("Failed to get protocol version of " + player.getName() + " after 10 retries");
-                return TAB.getInstance().getServerVersion().getNetworkId();
-            }
-            int version = Via.getAPI().getPlayerVersion(player.getUniqueId());
-            if (version == -1) {
-                if (!player.isOnline()) return TAB.getInstance().getServerVersion().getNetworkId();
-                Thread.sleep(5);
-                return getProtocolVersionVia(player, retryLevel + 1);
-            }
-            TAB.getInstance().debug("ViaVersion returned protocol version " + version + " for " + player.getName() + " (online=" + player.isOnline() + ")");
-            return version;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return -1;
-        } catch (Exception | LinkageError e) {
-            TAB.getInstance().getErrorManager().printError(String.format("Failed to get protocol version of %s using ViaVersion v%s", player.getName(), viaVersion.getDescription().getVersion()), e);
-            return TAB.getInstance().getServerVersion().getNetworkId();
-        }
-    }
-
-    /**
      * Sends console message using ConsoleCommandSender, due to
      * Paper not translating colors correctly in Logger messages
+     * and to allow RGB (at least on Paper, doesn't work on spigot)
      *
      * @param   message
      *          Message to send
@@ -306,6 +227,9 @@ public class BukkitPlatform extends Platform {
      */
     @Override
     public void sendConsoleMessage(String message, boolean translateColors) {
-        Bukkit.getConsoleSender().sendMessage("[TAB] " + (translateColors ? EnumChatFormat.color(message) : message));
+        Bukkit.getConsoleSender().sendMessage("[TAB] " + (translateColors ?
+                EnumChatFormat.color(RGBUtils.getInstance().convertToBukkitFormat(message,
+                        TAB.getInstance().getServerVersion().getMinorVersion() >= 16))
+                : message));
     }
 }

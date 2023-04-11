@@ -1,15 +1,21 @@
 package me.neznamy.tab.shared.features.redis;
 
-import me.neznamy.tab.api.TabFeature;
+import lombok.Getter;
+import me.neznamy.tab.api.TabAPI;
+import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.api.feature.*;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.chat.IChatBaseComponent;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardTeam;
+import me.neznamy.tab.api.event.EventHandler;
 import me.neznamy.tab.shared.TAB;
-import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.shared.event.impl.TabPlaceholderRegisterEvent;
+import me.neznamy.tab.shared.features.BelowName;
 import me.neznamy.tab.shared.features.PlayerList;
+import me.neznamy.tab.shared.features.YellowNumber;
 import me.neznamy.tab.shared.features.globalplayerlist.GlobalPlayerList;
 import me.neznamy.tab.shared.features.nametags.NameTag;
+import me.neznamy.tab.shared.features.sorting.Sorting;
+import me.neznamy.tab.shared.placeholders.ServerPlaceholderImpl;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
@@ -22,62 +28,26 @@ import java.util.concurrent.ConcurrentHashMap;
  * multiple proxies connected with a redis plugin.
  */
 @SuppressWarnings("unchecked")
-public abstract class RedisSupport extends TabFeature {
+public abstract class RedisSupport extends TabFeature implements JoinListener, QuitListener, LoginPacketListener,
+        DisplayNameListener, Loadable, UnLoadable, ServerSwitchListener {
+
+    @Getter private final String featureName = "RedisSupport";
 
     /** Redis players on other proxies by their UUID */
-    protected final Map<String, RedisPlayer> redisPlayers = new ConcurrentHashMap<>();
+    @Getter protected final Map<String, RedisPlayer> redisPlayers = new ConcurrentHashMap<>();
 
     /** UUID of this proxy to ignore messages coming from the same proxy */
     protected final UUID proxy = UUID.randomUUID();
 
-    /** Global PlayerList feature */
+    /** Features this one hooks into */
     protected final GlobalPlayerList global = (GlobalPlayerList) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.GLOBAL_PLAYER_LIST);
+    @Getter private final PlayerList playerList = (PlayerList) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.PLAYER_LIST);
+    @Getter private final NameTag nameTags = (NameTag) TAB.getInstance().getTeamManager();
+    @Getter private final Sorting sorting = (Sorting) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.SORTING);
 
-    /** PlayerList feature */
-    private final PlayerList playerList = (PlayerList) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.PLAYER_LIST);
+    private final UUID EMPTY_ID = new UUID(0, 0);
 
-    /** NameTag feature */
-    private final NameTag nameTags = (NameTag) TAB.getInstance().getTeamManager();
-
-    /**
-     * Constructs new instance
-     */
-    protected RedisSupport() {
-        super("RedisBungee", null);
-        TAB.getInstance().getPlaceholderManager().registerServerPlaceholder(TabConstants.Placeholder.ONLINE, 1000, () ->
-                Arrays.stream(TAB.getInstance().getOnlinePlayers()).filter(all -> !all.isVanished()).count() +
-                        redisPlayers.values().stream().filter(all -> !all.isVanished()).count());
-        TAB.getInstance().getPlaceholderManager().registerServerPlaceholder(TabConstants.Placeholder.STAFF_ONLINE, 1000, () ->
-                Arrays.stream(TAB.getInstance().getOnlinePlayers()).filter(all -> !all.isVanished() && all.hasPermission(TabConstants.Permission.STAFF)).count() +
-                        redisPlayers.values().stream().filter(all -> !all.isVanished() && all.isStaff()).count());
-    }
-
-    /**
-     * Returns all players on other proxies
-     *
-     * @return  all players on other proxies
-     */
-    public Map<String, RedisPlayer> getRedisPlayers(){
-        return redisPlayers;
-    }
-
-    /**
-     * Returns PlayerList feature if it's enabled, {@code null} if disabled
-     *
-     * @return  PlayerList feature instance
-     */
-    public PlayerList getPlayerList() {
-        return playerList;
-    }
-
-    /**
-     * Returns NameTag feature if it's enabled, {@code null} if disabled
-     *
-     * @return  NameTag feature instance
-     */
-    public NameTag getNameTags() {
-        return nameTags;
-    }
+    private EventHandler<TabPlaceholderRegisterEvent> eventHandler;
 
     /**
      * Sends a message to all other proxies to update
@@ -92,7 +62,7 @@ public abstract class RedisSupport extends TabFeature {
         JSONObject json = new JSONObject();
         json.put("proxy", proxy.toString());
         json.put("action", "tabformat");
-        json.put("UUID", p.getTablistUUID().toString());
+        json.put("UUID", p.getTablistId().toString());
         json.put("tabformat", format);
         sendMessage(json.toString());
     }
@@ -112,7 +82,7 @@ public abstract class RedisSupport extends TabFeature {
         JSONObject json = new JSONObject();
         json.put("proxy", proxy.toString());
         json.put("action", "nametag");
-        json.put("UUID", p.getTablistUUID().toString());
+        json.put("UUID", p.getTablistId().toString());
         json.put(TabConstants.Property.TAGPREFIX, tagPrefix);
         json.put(TabConstants.Property.TAGSUFFIX, tagSuffix);
         sendMessage(json.toString());
@@ -131,7 +101,7 @@ public abstract class RedisSupport extends TabFeature {
         JSONObject json = new JSONObject();
         json.put("proxy", proxy.toString());
         json.put("action", "belowname");
-        json.put("UUID", p.getTablistUUID().toString());
+        json.put("UUID", p.getTablistId().toString());
         json.put("belowname", value);
         sendMessage(json.toString());
     }
@@ -149,7 +119,7 @@ public abstract class RedisSupport extends TabFeature {
         JSONObject json = new JSONObject();
         json.put("proxy", proxy.toString());
         json.put("action", "yellow-number");
-        json.put("UUID", p.getTablistUUID().toString());
+        json.put("UUID", p.getTablistId().toString());
         json.put("yellow-number", value);
         sendMessage(json.toString());
     }
@@ -167,7 +137,7 @@ public abstract class RedisSupport extends TabFeature {
         JSONObject json = new JSONObject();
         json.put("proxy", proxy.toString());
         json.put("action", "team");
-        json.put("UUID", p.getTablistUUID().toString());
+        json.put("UUID", p.getTablistId().toString());
         json.put("to", to);
         sendMessage(json.toString());
     }
@@ -231,10 +201,10 @@ public abstract class RedisSupport extends TabFeature {
                         boolean before = shouldSee(viewer, target.getServer(), target.isVanished());
                         boolean after = shouldSee(viewer, server, target.isVanished());
                         if (!before && after) {
-                            viewer.sendCustomPacket(target.getAddPacket(), this);
+                            viewer.getTabList().addEntry(target.getEntry());
                         }
                         if (before && !after) {
-                            viewer.sendCustomPacket(target.getRemovePacket(), this);
+                            viewer.getTabList().removeEntry(target.getUniqueId());
                         }
                     }
                     target.setServer(server);
@@ -244,7 +214,9 @@ public abstract class RedisSupport extends TabFeature {
                     if (target == null) break;
                     target.setTabFormat((String) message.get("tabformat"));
                     for (TabPlayer viewer : TAB.getInstance().getOnlinePlayers()) {
-                        if (viewer.getVersion().getMinorVersion() >= 8) viewer.sendCustomPacket(target.getUpdatePacket(), this);
+                        if (viewer.getVersion().getMinorVersion() >= 8) {
+                            viewer.getTabList().updateDisplayName(target.getUniqueId(), target.isDisabledPlayerList() ? null : IChatBaseComponent.optimizedComponent(target.getTabFormat()));
+                        }
                     }
                     break;
                 case "nametag":
@@ -253,7 +225,7 @@ public abstract class RedisSupport extends TabFeature {
                     target.setTagPrefix((String) message.get(TabConstants.Property.TAGPREFIX));
                     target.setTagSuffix((String) message.get(TabConstants.Property.TAGSUFFIX));
                     for (TabPlayer viewer : TAB.getInstance().getOnlinePlayers()) {
-                        viewer.sendCustomPacket(target.getUpdateTeamPacket(), this);
+                        viewer.getScoreboard().updateTeam(target.getTeamName(), target.getTagPrefix(), target.getTagSuffix(), target.isNameVisibility() ? "always" : "never", "always", 2);
                     }
                     break;
                 case "belowname":
@@ -261,7 +233,7 @@ public abstract class RedisSupport extends TabFeature {
                     if (target == null) break;
                     target.setBelowName((String) message.get("belowname"));
                     for (TabPlayer viewer : TAB.getInstance().getOnlinePlayers()) {
-                        viewer.sendCustomPacket(target.getBelowNameUpdatePacket(), this);
+                        viewer.getScoreboard().setScore(BelowName.OBJECTIVE_NAME, target.getNickname(), target.getBelowName());
                     }
                     break;
                 case "yellow-number":
@@ -269,27 +241,26 @@ public abstract class RedisSupport extends TabFeature {
                     if (target == null) break;
                     target.setYellowNumber((String) message.get("yellow-number"));
                     for (TabPlayer viewer : TAB.getInstance().getOnlinePlayers()) {
-                        viewer.sendCustomPacket(target.getYellowNumberUpdatePacket(), this);
+                        viewer.getScoreboard().setScore(YellowNumber.OBJECTIVE_NAME, target.getNickname(), target.getYellowNumber());
                     }
                     break;
                 case "team":
                     target = redisPlayers.get(id.toString());
                     if (target == null) break;
-                    PacketPlayOutScoreboardTeam unregister = target.getUnregisterTeamPacket();
                     target.setTeamName((String) message.get("to"));
-                    PacketPlayOutScoreboardTeam register = target.getRegisterTeamPacket();
                     for (TabPlayer viewer : TAB.getInstance().getOnlinePlayers()) {
-                        viewer.sendCustomPacket(unregister, this);
-                        viewer.sendCustomPacket(register, this);
+                        viewer.getScoreboard().unregisterTeam(target.getTeamName());
+                        viewer.getScoreboard().registerTeam(target.getTeamName(), target.getTagPrefix(), target.getTagSuffix(),
+                                target.isNameVisibility() ? "always" : "never", "always", Collections.singletonList(target.getNickname()), 2);
                     }
                     break;
                 case "quit":
                     target = redisPlayers.get(id.toString());
                     if (target == null) break; //player left current proxy and was unloaded from memory, therefore null check didn't pass
                     for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
-                        all.sendCustomPacket(target.getUnregisterTeamPacket(), this);
+                        all.getScoreboard().unregisterTeam(target.getTeamName());
                         if (all.getVersion().getMinorVersion() < 8) continue;
-                        if (!target.getServer().equals(all.getServer())) all.sendCustomPacket(target.getRemovePacket(), this);
+                        if (!target.getServer().equals(all.getServer())) all.getTabList().removeEntry(target.getUniqueId());
                     }
                     redisPlayers.remove(id.toString());
                     break;
@@ -307,19 +278,21 @@ public abstract class RedisSupport extends TabFeature {
      */
     private void join(RedisPlayer target) {
         for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
-            all.sendCustomPacket(target.getRegisterTeamPacket(), this);
-            all.sendCustomPacket(target.getBelowNameUpdatePacket(), this);
-            all.sendCustomPacket(target.getYellowNumberUpdatePacket(), this);
+            all.getScoreboard().registerTeam(target.getTeamName(), target.getTagPrefix(), target.getTagSuffix(), target.isNameVisibility() ? "always" : "never", "always", Collections.singletonList(target.getNickname()), 2);
+            all.getScoreboard().setScore(BelowName.OBJECTIVE_NAME, target.getNickname(), target.getBelowName());
+            all.getScoreboard().setScore(YellowNumber.OBJECTIVE_NAME, target.getNickname(), target.getYellowNumber());
             if (all.getVersion().getMinorVersion() < 8) continue;
             if (global == null) {
-                if (all.getServer().equals(target.getServer())) all.sendCustomPacket(target.getUpdatePacket(), this);
+                if (all.getServer().equals(target.getServer())) {
+                    all.getTabList().updateDisplayName(target.getUniqueId(), target.isDisabledPlayerList() ? null : IChatBaseComponent.optimizedComponent(target.getTabFormat()));
+                }
                 continue;
             }
             if (shouldSee(all, target.getServer(), target.isVanished())) {
                 if (!all.getServer().equals(target.getServer())) {
-                    all.sendCustomPacket(target.getAddPacket(), this);
+                    all.getTabList().addEntry(target.getEntry());
                 } else {
-                    all.sendCustomPacket(target.getUpdatePacket(), this);
+                    all.getTabList().updateDisplayName(target.getUniqueId(), target.isDisabledPlayerList() ? null : IChatBaseComponent.optimizedComponent(target.getTabFormat()));
                 }
             }
         }
@@ -331,7 +304,7 @@ public abstract class RedisSupport extends TabFeature {
 
     private boolean shouldSee(TabPlayer viewer, String viewerServer, String server, boolean targetVanished) {
         if (targetVanished && !viewer.hasPermission(TabConstants.Permission.SEE_VANISHED)) return false;
-        if (global.getSpyServers().contains(viewerServer)) return true;
+        if (global.isSpyServer(viewerServer)) return true;
         return global.getServerGroup(viewerServer).equals(global.getServerGroup(server));
     }
 
@@ -348,9 +321,25 @@ public abstract class RedisSupport extends TabFeature {
      */
     public abstract void unregister();
 
-
     @Override
     public void load() {
+        eventHandler = event -> {
+            String identifier = event.getIdentifier();
+            if (identifier.startsWith("%online_")) {
+                String server = identifier.substring(8, identifier.length()-1);
+                event.setPlaceholder(new ServerPlaceholderImpl(identifier, 1000, () ->
+                        Arrays.stream(TAB.getInstance().getOnlinePlayers()).filter(p -> p.getServer().equals(server) && !p.isVanished()).count() +
+                                redisPlayers.values().stream().filter(all -> all.getServer().equals(server) && !all.isVanished()).count()));
+
+            }
+        };
+        TAB.getInstance().getPlaceholderManager().registerServerPlaceholder(TabConstants.Placeholder.ONLINE, 1000, () ->
+                Arrays.stream(TAB.getInstance().getOnlinePlayers()).filter(all -> !all.isVanished()).count() +
+                        redisPlayers.values().stream().filter(all -> !all.isVanished()).count());
+        TAB.getInstance().getPlaceholderManager().registerServerPlaceholder(TabConstants.Placeholder.STAFF_ONLINE, 1000, () ->
+                Arrays.stream(TAB.getInstance().getOnlinePlayers()).filter(all -> !all.isVanished() && all.hasPermission(TabConstants.Permission.STAFF)).count() +
+                        redisPlayers.values().stream().filter(all -> !all.isVanished() && all.isStaff()).count());
+        TabAPI.getInstance().getEventBus().register(TabPlaceholderRegisterEvent.class, eventHandler);
         for (TabPlayer p : TAB.getInstance().getOnlinePlayers()) onJoin(p);
         sendMessage("{\"action\":\"loadrequest\",\"proxy\":\"" + proxy.toString() + "\"}");
     }
@@ -359,6 +348,7 @@ public abstract class RedisSupport extends TabFeature {
     public void unload() {
         for (TabPlayer p : TAB.getInstance().getOnlinePlayers()) onQuit(p);
         unregister();
+        TabAPI.getInstance().getEventBus().unregister(eventHandler);
     }
 
     @Override
@@ -367,15 +357,15 @@ public abstract class RedisSupport extends TabFeature {
         json.put("proxy", proxy.toString());
         sendMessage(json.toString());
         for (RedisPlayer redis : redisPlayers.values()) {
-            p.sendCustomPacket(redis.getRegisterTeamPacket(), this);
-            p.sendCustomPacket(redis.getBelowNameUpdatePacket(), this);
-            p.sendCustomPacket(redis.getYellowNumberUpdatePacket(), this);
+            p.getScoreboard().registerTeam(redis.getTeamName(), redis.getTagPrefix(), redis.getTagSuffix(), redis.isNameVisibility() ? "always" : "never", "always", Collections.singletonList(redis.getNickname()), 2);
+            p.getScoreboard().setScore(BelowName.OBJECTIVE_NAME, redis.getNickname(), redis.getBelowName());
+            p.getScoreboard().setScore(YellowNumber.OBJECTIVE_NAME, redis.getNickname(), redis.getYellowNumber());
             if (global == null) continue;
             if (shouldSee(p, redis.getServer(), redis.isVanished())) {
                 if (!p.getServer().equals(redis.getServer())) {
-                    p.sendCustomPacket(redis.getAddPacket(), this);
+                    p.getTabList().addEntry(redis.getEntry());
                 } else {
-                    p.sendCustomPacket(redis.getUpdatePacket(), this);
+                    p.getTabList().updateDisplayName(redis.getUniqueId(), redis.isDisabledPlayerList() ? null : IChatBaseComponent.optimizedComponent(redis.getTabFormat()));
                 }
             }
         }
@@ -386,7 +376,7 @@ public abstract class RedisSupport extends TabFeature {
         JSONObject json = new JSONObject();
         json.put("proxy", proxy.toString());
         json.put("action", "server");
-        json.put("UUID", p.getTablistUUID().toString());
+        json.put("UUID", p.getTablistId().toString());
         json.put("server", to);
         sendMessage(json.toString());
         if (p.getVersion().getMinorVersion() < 8 || global == null) return;
@@ -394,10 +384,10 @@ public abstract class RedisSupport extends TabFeature {
             boolean before = shouldSee(p, from, redis.getServer(), redis.isVanished());
             boolean after = shouldSee(p, to, redis.getServer(), redis.isVanished());
             if (!before && after) {
-                p.sendCustomPacket(redis.getAddPacket(), this);
+                p.getTabList().addEntry(redis.getEntry());
             }
             if (before && !after) {
-                p.sendCustomPacket(redis.getRemovePacket(), this);
+                p.getTabList().removeEntry(redis.getUniqueId());
             }
         }
     }
@@ -407,36 +397,24 @@ public abstract class RedisSupport extends TabFeature {
         JSONObject json = new JSONObject();
         json.put("proxy", proxy.toString());
         json.put("action", "quit");
-        json.put("UUID", p.getTablistUUID().toString());
+        json.put("UUID", p.getTablistId().toString());
         sendMessage(json.toString());
     }
 
     @Override
-    public void onPlayerInfo(TabPlayer receiver, PacketPlayOutPlayerInfo info) {
-        if (info.getAction() == PacketPlayOutPlayerInfo.EnumPlayerInfoAction.REMOVE_PLAYER && global != null) {
-            for (PacketPlayOutPlayerInfo.PlayerInfoData playerInfoData : info.getEntries()) {
-                RedisPlayer packetPlayer = redisPlayers.get(playerInfoData.getUniqueId().toString());
-                if (packetPlayer != null && (playerInfoData.getName() == null || playerInfoData.getName().length() == 0) && !packetPlayer.isVanished()) {
-                    //remove packet not coming from tab
-                    //changing to random non-existing player, the easiest way to cancel the removal
-                    playerInfoData.setUniqueId(UUID.randomUUID());
-                }
-            }
+    public IChatBaseComponent onDisplayNameChange(TabPlayer packetReceiver, UUID id, IChatBaseComponent displayName) {
+        RedisPlayer packetPlayer = redisPlayers.get(id.toString());
+        if (packetPlayer != null && !packetPlayer.isDisabledPlayerList()) {
+            return IChatBaseComponent.optimizedComponent(packetPlayer.getTabFormat());
         }
-        if (info.getAction() != PacketPlayOutPlayerInfo.EnumPlayerInfoAction.UPDATE_DISPLAY_NAME && info.getAction() != PacketPlayOutPlayerInfo.EnumPlayerInfoAction.ADD_PLAYER) return;
-        for (PacketPlayOutPlayerInfo.PlayerInfoData playerInfoData : info.getEntries()) {
-            RedisPlayer packetPlayer = redisPlayers.get(playerInfoData.getUniqueId().toString());
-            if (packetPlayer != null && !packetPlayer.hasDisabledPlayerlist()) {
-                playerInfoData.setDisplayName(IChatBaseComponent.optimizedComponent(packetPlayer.getTabFormat()));
-            }
-        }
+        return displayName;
     }
 
     @Override
     public void onLoginPacket(TabPlayer packetReceiver) {
         for (RedisPlayer p : redisPlayers.values()) {
             for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
-                all.sendCustomPacket(p.getRegisterTeamPacket());
+                all.getScoreboard().registerTeam(p.getTeamName(), p.getTagPrefix(), p.getTagSuffix(), p.isNameVisibility() ? "always" : "never", "always", Collections.singletonList(p.getNickname()), 2);
             }
         }
     }

@@ -1,32 +1,41 @@
 package me.neznamy.tab.platforms.bukkit.nms.datawatcher;
 
+import lombok.Data;
 import me.neznamy.tab.api.TabAPI;
-import me.neznamy.tab.api.util.Preconditions;
-import me.neznamy.tab.platforms.bukkit.nms.NMSStorage;
+import me.neznamy.tab.platforms.bukkit.nms.storage.nms.NMSStorage;
 
+import java.lang.reflect.Field;
+
+/**
+ * Class representing NMS Data Watcher Item
+ */
+@Data
 public class DataWatcherItem {
-    
-    //type of value (position + data type (1.9+))
+
+    /** NMS Fields */
+    public static Class<?> CLASS;
+    public static Field TYPE;
+    public static Field VALUE;
+
+    /** Instance fields */
     private final DataWatcherObject type;
-    
-    //actual data value
     private final Object value;
-    
+
     /**
-     * Constructs new instance of the object with given parameters
+     * Loads all required Fields
      *
-     * @param   type
-     *          value type
-     * @param   value
-     *          value
+     * @param   nms
+     *          NMS storage reference
      */
-    public DataWatcherItem(DataWatcherObject type, Object value){
-        Preconditions.checkNotNull(type, "type");
-        Preconditions.checkNotNull(value, "value");
-        this.type = type;
-        this.value = value;
+    public static void load(NMSStorage nms) {
+        VALUE = nms.getFields(CLASS, Object.class).get(0);
+        if (nms.getMinorVersion() >= 9) {
+            TYPE = nms.getFields(CLASS, DataWatcherObject.CLASS).get(0);
+        } else {
+            TYPE = nms.getFields(CLASS, int.class).get(1);
+        }
     }
-    
+
     /**
      * Returns and instance of this class from given NMS item
      *
@@ -37,20 +46,14 @@ public class DataWatcherItem {
      *          if thrown by reflective operation
      */
     public static DataWatcherItem fromNMS(Object nmsItem) throws ReflectiveOperationException {
-        NMSStorage nms = NMSStorage.getInstance();
+        Object value = VALUE.get(nmsItem);
+        DataWatcherObject object;
         if (TabAPI.getInstance().getServerVersion().getMinorVersion() >= 9) {
-            Object nmsObject = nms.DataWatcherItem_TYPE.get(nmsItem);
-            return new DataWatcherItem(new DataWatcherObject(nms.DataWatcherObject_SLOT.getInt(nmsObject), nms.DataWatcherObject_SERIALIZER.get(nmsObject)), nms.DataWatcherItem_VALUE.get(nmsItem));
+            Object nmsObject = TYPE.get(nmsItem);
+            object = new DataWatcherObject(DataWatcherObject.SLOT.getInt(nmsObject), DataWatcherObject.SERIALIZER.get(nmsObject));
         } else {
-            return new DataWatcherItem(new DataWatcherObject(nms.DataWatcherItem_TYPE.getInt(nmsItem), null), nms.DataWatcherItem_VALUE.get(nmsItem));
+            object = new DataWatcherObject(TYPE.getInt(nmsItem), null);
         }
-    }
-
-    public DataWatcherObject getType() {
-        return type;
-    }
-
-    public Object getValue() {
-        return value;
+        return new DataWatcherItem(object, value);
     }
 }

@@ -1,18 +1,20 @@
 package me.neznamy.tab.api.chat.rgb;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
+import lombok.Getter;
+import lombok.NonNull;
 import me.neznamy.tab.api.chat.EnumChatFormat;
-import me.neznamy.tab.api.chat.TextColor;
+import me.neznamy.tab.api.chat.IChatBaseComponent;
 import me.neznamy.tab.api.chat.rgb.format.*;
 import me.neznamy.tab.api.chat.rgb.gradient.CMIGradient;
 import me.neznamy.tab.api.chat.rgb.gradient.CommonGradient;
 import me.neznamy.tab.api.chat.rgb.gradient.GradientPattern;
 import me.neznamy.tab.api.chat.rgb.gradient.KyoriGradient;
-import me.neznamy.tab.api.util.Preconditions;
+import me.neznamy.tab.api.util.ReflectionUtils;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * A helper class to reformat all RGB formats into the default #RRGGBB and apply gradients
@@ -20,7 +22,7 @@ import me.neznamy.tab.api.util.Preconditions;
 public class RGBUtils {
 
     /** Instance of the class */
-    private static final RGBUtils instance = new RGBUtils();
+    @Getter private static final RGBUtils instance = new RGBUtils();
 
     /** Registered RGB formatters */
     private final RGBFormatter[] formats;
@@ -39,15 +41,14 @@ public class RGBUtils {
      */
     public RGBUtils() {
         List<RGBFormatter> list = new ArrayList<>();
+        if (ReflectionUtils.classExists("net.kyori.adventure.text.minimessage.MiniMessage")) {
+            list.add(new MiniMessageFormat());
+        }
         list.add(new BukkitFormat());
         list.add(new CMIFormat());
         list.add(new UnnamedFormat1());
         list.add(new HtmlFormat());
         list.add(new KyoriFormat());
-        try {
-            Class.forName("net.kyori.adventure.text.minimessage.MiniMessage");
-            list.add(new MiniMessageFormat());
-        } catch (ClassNotFoundException ignored) {}
         formats = list.toArray(new RGBFormatter[0]);
 
         gradients = new GradientPattern[] {
@@ -66,23 +67,13 @@ public class RGBUtils {
     }
 
     /**
-     * Returns instance of this class
-     *
-     * @return  instance
-     */
-    public static RGBUtils getInstance() {
-        return instance;
-    }
-
-    /**
      * Applies all RGB formats and gradients to text and returns it.
      *
      * @param   text
      *          original text
      * @return  text where everything is converted to #RRGGBB
      */
-    public String applyFormats(String text) {
-        Preconditions.checkNotNull(text, "text");
+    public String applyFormats(@NonNull String text) {
         String replaced = text;
         for (GradientPattern pattern : gradients) {
             replaced = pattern.applyPattern(replaced, false);
@@ -101,8 +92,7 @@ public class RGBUtils {
      *          original text
      * @return  text where all gradients with static text are converted to #RRGGBB
      */
-    public String applyCleanGradients(String text) {
-        Preconditions.checkNotNull(text, "text");
+    public String applyCleanGradients(@NonNull String text) {
         String replaced = text;
         for (GradientPattern pattern : gradients) {
             replaced = pattern.applyPattern(replaced, true);
@@ -142,7 +132,9 @@ public class RGBUtils {
     }
 
     /**
-     * Converts all hex codes in given string to legacy codes
+     * Converts all hex codes in given string to legacy codes.
+     * Also removes redundant color codes caused by this operation
+     * to properly fit in limits.
      *
      * @param   text
      *          text to convert
@@ -150,29 +142,7 @@ public class RGBUtils {
      */
     public String convertRGBtoLegacy(String text) {
         if (text == null) return null;
-        if (!text.contains("#")) return EnumChatFormat.color(text);
-        String applied = applyFormats(text);
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < applied.length(); i++){
-            char c = applied.charAt(i);
-            if (c == '#' && applied.length() > i+6) {
-                String hexCode = applied.substring(i+1, i+7);
-                if (isHexCode(hexCode)) {
-                    if (containsLegacyCode(applied, i)) {
-                        sb.append(new TextColor(hexCode, EnumChatFormat.getByChar(applied.charAt(i+8))).getLegacyColor().getFormat());
-                        i += 8;
-                    } else {
-                        sb.append(new TextColor(hexCode).getLegacyColor().getFormat());
-                        i += 6;
-                    }
-                } else {
-                    sb.append(c);
-                }
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
+        return IChatBaseComponent.fromColoredText(text).toLegacyText();
     }
 
     /**
@@ -183,27 +153,12 @@ public class RGBUtils {
      *          string to check
      * @return  {@code true} if valid, {@code false} if not
      */
-    public boolean isHexCode(String string) {
-        Preconditions.checkNotNull(string, "string");
+    public boolean isHexCode(@NonNull String string) {
         if (string.length() != 6) return false;
         for (int i=0; i<6; i++) {
             char c = string.charAt(i);
             if (c < 48 || (c > 57 && c < 65) || (c > 70 && c < 97) || c > 102) return false;
         }
         return true;
-    }
-
-    /**
-     * Returns true if text contains legacy color request at defined RGB index start
-     *
-     * @param   text
-     *          text to check
-     * @param   i
-     *          current index start
-     * @return  {@code true} if legacy color is defined and valid, {@code false} otherwise
-     */
-    private static boolean containsLegacyCode(String text, int i) {
-        if (text.length() - i < 9 || text.charAt(i+7) != '|') return false;
-        return EnumChatFormat.getByChar(text.charAt(i+8)) != null;
     }
 }

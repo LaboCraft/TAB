@@ -1,72 +1,61 @@
 package me.neznamy.tab.shared.features.layout;
 
-import java.util.*;
-import java.util.stream.Collectors;
-
-import me.neznamy.tab.api.TabFeature;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import me.neznamy.tab.api.ProtocolVersion;
+import me.neznamy.tab.api.feature.Refreshable;
+import me.neznamy.tab.api.feature.ServerSwitchListener;
+import me.neznamy.tab.api.feature.TabFeature;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.chat.IChatBaseComponent;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo.EnumGamemode;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo.EnumPlayerInfoAction;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo.PlayerInfoData;
-import me.neznamy.tab.shared.TAB;
-import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.api.tablist.TabListEntry;
 import me.neznamy.tab.shared.placeholders.conditions.Condition;
 
-public class Layout extends TabFeature {
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-    private final String name;
-    private final LayoutManager manager;
+@RequiredArgsConstructor
+public class Layout extends TabFeature implements Refreshable, ServerSwitchListener {
+
+    @Getter private final String featureName = "Layout";
+    @Getter private final String refreshDisplayName = "Updating player groups";
+    @Getter private final String name;
+    @Getter private final LayoutManager manager;
     private final Condition displayCondition;
     private final Map<Integer, FixedSlot> fixedSlots;
     private final List<Integer> emptySlots;
-    private final List<ParentGroup> groups;
-    private final Set<TabPlayer> viewers = Collections.newSetFromMap(new WeakHashMap<>());
-
-    public Layout(String name, LayoutManager manager, Condition displayCondition, Map<Integer, FixedSlot> fixedSlots, List<Integer> emptySlots, List<ParentGroup> groups) {
-        super(manager.getFeatureName(), "Updating player groups");
-        this.name = name;
-        this.manager = manager;
-        this.displayCondition = displayCondition;
-        this.fixedSlots = fixedSlots;
-        this.emptySlots = emptySlots;
-        this.groups = groups;
-    }
+    @Getter private final List<ParentGroup> groups;
+    @Getter private final Set<TabPlayer> viewers = Collections.newSetFromMap(new WeakHashMap<>());
 
     public void sendTo(TabPlayer p) {
         if (viewers.contains(p)) return;
         viewers.add(p);
-        List<PlayerInfoData> list = new ArrayList<>();
+        List<TabListEntry> list = new ArrayList<>();
         groups.forEach(g -> list.addAll(g.getSlots(p)));
         for (FixedSlot slot : fixedSlots.values()) {
-            p.setProperty(slot, slot.getPropertyName(), slot.getText());
-            list.add(new PlayerInfoData("", slot.getId(), slot.getSkin(), slot.getPing(), EnumGamemode.CREATIVE, IChatBaseComponent.optimizedComponent(p.getProperty(slot.getPropertyName()).updateAndGet()), null));
+            list.add(slot.createEntry(p));
         }
         for (int slot : emptySlots) {
-            list.add(new PlayerInfoData("", manager.getUUID(slot), manager.getSkinManager().getDefaultSkin(), manager.getEmptySlotPing(), EnumGamemode.CREATIVE, new IChatBaseComponent(""), null));
+            list.add(new TabListEntry(manager.getUUID(slot), getEntryName(p, slot), manager.getSkinManager().getDefaultSkin(), true, manager.getEmptySlotPing(), 0, new IChatBaseComponent(""), null));
         }
         if (p.getVersion().getMinorVersion() < 8 || p.isBedrockPlayer()) return;
-        p.sendCustomPacket(new PacketPlayOutPlayerInfo(EnumPlayerInfoAction.ADD_PLAYER, list), this);
+        p.getTabList().addEntries(list);
+    }
+
+    public String getEntryName(TabPlayer viewer, long slot) {
+        return viewer.getVersion().getNetworkId() >= ProtocolVersion.V1_19_3.getNetworkId() ? "|slot_" + (10+slot) : "";
     }
 
     public void removeFrom(TabPlayer p) {
         if (!viewers.contains(p)) return;
         viewers.remove(p);
-        List<PlayerInfoData> list = new ArrayList<>();
-        for (UUID id : manager.getUuids().values()) {
-            list.add(new PlayerInfoData(id));
-        }
         if (p.getVersion().getMinorVersion() < 8 || p.isBedrockPlayer()) return;
-        p.sendCustomPacket(new PacketPlayOutPlayerInfo(EnumPlayerInfoAction.REMOVE_PLAYER, list), this);
+        p.getTabList().removeEntries(manager.getUuids().values());
     }
 
     public boolean isConditionMet(TabPlayer p) {
         return displayCondition == null || displayCondition.isMet(p);
-    }
-
-    public List<ParentGroup> getGroups(){
-        return groups;
     }
 
     public void tick() {
@@ -81,16 +70,8 @@ public class Layout extends TabFeature {
         tick();
     }
 
-    public Set<TabPlayer> getViewers() {
-        return viewers;
-    }
-    
     public boolean containsViewer(TabPlayer viewer) {
         return viewers.contains(viewer);
-    }
-
-    public LayoutManager getManager() {
-        return manager;
     }
 
     public PlayerSlot getSlot(TabPlayer p) {
@@ -101,17 +82,9 @@ public class Layout extends TabFeature {
         }
         return null;
     }
-    
-    public String getName() {
-        return name;
-    }
 
     @Override
-    public void onServerChange(TabPlayer player, String from, String to) {
-        if (TAB.getInstance().getFeatureManager().isFeatureEnabled(TabConstants.Feature.PIPELINE_INJECTION)) return;
-        //velocity clearing TabList on server switch
-        if (viewers.remove(player)){
-            sendTo(player);
-        }
+    public void onServerChange(TabPlayer changed, String from, String to) {
+        if (viewers.remove(changed)) sendTo(changed);
     }
 }

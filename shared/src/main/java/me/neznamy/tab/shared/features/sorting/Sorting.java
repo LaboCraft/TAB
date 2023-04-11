@@ -4,8 +4,13 @@ import java.util.*;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
-import me.neznamy.tab.api.TabFeature;
+import lombok.Getter;
+import me.neznamy.tab.api.feature.JoinListener;
+import me.neznamy.tab.api.feature.Loadable;
+import me.neznamy.tab.api.feature.Refreshable;
+import me.neznamy.tab.api.feature.TabFeature;
 import me.neznamy.tab.api.TabPlayer;
+import me.neznamy.tab.api.team.TeamManager;
 import me.neznamy.tab.shared.ITabPlayer;
 import me.neznamy.tab.shared.TAB;
 import me.neznamy.tab.api.TabConstants;
@@ -25,28 +30,33 @@ import me.neznamy.tab.shared.features.sorting.types.SortingType;
 /**
  * Class for handling player sorting rules
  */
-public class Sorting extends TabFeature {
+public class Sorting extends TabFeature implements JoinListener, Loadable, Refreshable {
 
-    private final NameTag nameTags;
+    @Getter private final String featureName = "Team name refreshing";
+    @Getter private final String refreshDisplayName = "Updating team name";
+
+    private NameTag nameTags;
+    private LayoutManager layout;
+    private RedisSupport redis;
     
     //map of all registered sorting types
     private final Map<String, BiFunction<Sorting, String, SortingType>> types = new LinkedHashMap<>();
     
     //if sorting is case-sensitive or not
-    private final boolean caseSensitiveSorting = TAB.getInstance().getConfiguration().getConfig().getBoolean("scoreboard-teams.case-sensitive-sorting", true);
+    @Getter private final boolean caseSensitiveSorting = TAB.getInstance().getConfiguration().getConfig().getBoolean("scoreboard-teams.case-sensitive-sorting", true);
     
     //active sorting types
     private final SortingType[] usedSortingTypes;
+
+    //team names and notes
+    private final WeakHashMap<TabPlayer, String> shortTeamNames = new WeakHashMap<>();
+    private final WeakHashMap<TabPlayer, String> fullTeamNames = new WeakHashMap<>();
+    private final WeakHashMap<TabPlayer, String> teamNameNotes = new WeakHashMap<>();
     
     /**
-     * Constructs new instance, loads data from configuration and starts repeating task
-     *
-     * @param   nameTags
-     *          NameTag feature
+     * Constructs new instance and loads config options
      */
-    public Sorting(NameTag nameTags) {
-        super("Team name refreshing", "Refreshing team name");
-        this.nameTags = nameTags;
+    public Sorting() {
         types.put("GROUPS", Groups::new);
         types.put("PERMISSIONS", Permissions::new);
         types.put("PLACEHOLDER", Placeholder::new);
@@ -54,34 +64,38 @@ public class Sorting extends TabFeature {
         types.put("PLACEHOLDER_Z_TO_A", PlaceholderZtoA::new);
         types.put("PLACEHOLDER_LOW_TO_HIGH", PlaceholderLowToHigh::new);
         types.put("PLACEHOLDER_HIGH_TO_LOW", PlaceholderHighToLow::new);
-        usedSortingTypes = compile(TAB.getInstance().getConfiguration().getConfig().getStringList("scoreboard-teams.sorting-types", new ArrayList<>()));
+        usedSortingTypes = compile(TAB.getInstance().getConfig().getStringList("scoreboard-teams.sorting-types", new ArrayList<>()));
     }
     
     @Override
     public void refresh(TabPlayer p, boolean force) {
-        if (nameTags != null && (nameTags.getForcedTeamName(p) != null || nameTags.hasTeamHandlingPaused(p))) return;
-        String newName = getTeamName(p);
-        if (!p.getTeamName().equals(newName)) {
-            if (nameTags != null) nameTags.unregisterTeam(p);
-            LayoutManager layout = (LayoutManager) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.LAYOUT);
-            if (layout != null) layout.updateTeamName(p, newName);
-            ((ITabPlayer) p).setTeamName(newName);
-            if (nameTags != null) nameTags.registerTeam(p);
+        String previousShortName = shortTeamNames.get(p);
+        constructTeamNames(p);
+        if (!shortTeamNames.get(p).equals(previousShortName)) {
+            if (nameTags != null && nameTags.getForcedTeamName(p) == null && !nameTags.hasTeamHandlingPaused(p) && !nameTags.isDisabledPlayer(p)) {
+                for (TabPlayer viewer : TAB.getInstance().getOnlinePlayers()) {
+                    viewer.getScoreboard().unregisterTeam(previousShortName);
+                }
+                nameTags.registerTeam(p);
+            }
+            if (layout != null) layout.updateTeamName(p, fullTeamNames.get(p));
         }
     }
     
     @Override
-    public void load(){
-        if (nameTags != null) return; //handled by NameTag feature
+    public void load() {
+        // All of these features are instantiated after this one, so they must be detected later
+        nameTags = (NameTag) TAB.getInstance().getTeamManager();
+        layout = (LayoutManager) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.LAYOUT);
+        redis = (RedisSupport) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.REDIS_BUNGEE);
         for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
-            ((ITabPlayer) all).setTeamName(getTeamName(all));
+            constructTeamNames(all);
         }
     }
     
     @Override
     public void onJoin(TabPlayer connectedPlayer) {
-        if (nameTags != null) return; //handled by NameTag feature
-        ((ITabPlayer) connectedPlayer).setTeamName(getTeamName(connectedPlayer));
+        constructTeamNames(connectedPlayer);
     }
     
     /**
@@ -89,7 +103,7 @@ public class Sorting extends TabFeature {
      *
      * @return  list of compiled sorting types
      */
-    private SortingType[] compile(List<String> options){
+    private SortingType[] compile(List<String> options) {
         List<SortingType> list = new ArrayList<>();
         for (String element : options) {
             String[] arr = element.split(":");
@@ -103,24 +117,32 @@ public class Sorting extends TabFeature {
     }
     
     /**
-     * Constructs team name for specified player
+     * Constructs short team names, both short (up to 16 characters long)
+     * and full for specified player
      *
      * @param   p
      *          player to build team name for
-     * @return  unique up to 16 character long sequence that sorts the player
      */
-    public String getTeamName(TabPlayer p) {
-        ((ITabPlayer) p).setTeamNameNote("");
-        StringBuilder sb = new StringBuilder();
+    public void constructTeamNames(TabPlayer p) {
+        teamNameNotes.put(p, "");
+        StringBuilder shortName = new StringBuilder();
         for (SortingType type : usedSortingTypes) {
-            sb.append(type.getChars((ITabPlayer) p));
+            shortName.append(type.getChars((ITabPlayer) p));
         }
-        if (sb.length() > 15) {
-            sb.setLength(15);
+        StringBuilder fullName = new StringBuilder(shortName);
+        if (layout != null) {
+            //layout is enabled, start with max character to fix compatibility with plugins
+            //which add empty player into a team such as LibsDisguises
+            shortName.insert(0, Character.MAX_VALUE);
         }
-        return checkTeamName(p, sb, 65);
+        if (shortName.length() > 15) {
+            shortName.setLength(15);
+        }
+        String finalShortName = checkTeamName(p, shortName, 65);
+        shortTeamNames.put(p, finalShortName);
+        fullTeamNames.put(p, fullName.append(finalShortName.charAt(finalShortName.length() - 1)).toString());
     }
-    
+
     /**
      * Checks if team name is available and proceeds to try new values until free name is found
      *
@@ -133,17 +155,14 @@ public class Sorting extends TabFeature {
      * @return  first available full team name
      */
     private String checkTeamName(TabPlayer p, StringBuilder currentName, int id) {
-        String potentialTeamName = currentName.toString();
-        if (!caseSensitiveSorting) potentialTeamName = potentialTeamName.toLowerCase();
-        potentialTeamName += (char)id;
+        String potentialTeamName = currentName.toString() + (char)id;
         for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
             if (all == p) continue;
-            if (all.getTeamName() != null && all.getTeamName().equals(potentialTeamName)) {
+            if (shortTeamNames.get(all) != null && shortTeamNames.get(all).equals(potentialTeamName)) {
                 return checkTeamName(p, currentName, id+1);
             }
         }
-        if (TAB.getInstance().getFeatureManager().isFeatureEnabled(TabConstants.Feature.REDIS_BUNGEE)) {
-            RedisSupport redis = (RedisSupport) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.REDIS_BUNGEE);
+        if (redis != null) {
             for (RedisPlayer all : redis.getRedisPlayers().values()) {
                 if (all.getTeamName() != null && all.getTeamName().equals(potentialTeamName)) {
                     return checkTeamName(p, currentName, id+1);
@@ -159,6 +178,24 @@ public class Sorting extends TabFeature {
      * @return  user-friendly representation of sorting types
      */
     public String typesToString() {
-        return Arrays.stream(usedSortingTypes).map(Object::toString).collect(Collectors.joining(" then "));
+        return Arrays.stream(usedSortingTypes).map(Object::toString).collect(Collectors.joining(" -> "));
+    }
+
+    public String getShortTeamName(TabPlayer p) {
+        TeamManager teams = TAB.getInstance().getTeamManager();
+        if (teams != null && teams.getForcedTeamName(p) != null) return teams.getForcedTeamName(p);
+        return shortTeamNames.get(p);
+    }
+
+    public String getFullTeamName(TabPlayer p) {
+        return fullTeamNames.get(p);
+    }
+
+    public String getTeamNameNote(TabPlayer p) {
+        return teamNameNotes.get(p);
+    }
+
+    public void setTeamNameNote(TabPlayer p, String note) {
+        teamNameNotes.put(p, note);
     }
 }

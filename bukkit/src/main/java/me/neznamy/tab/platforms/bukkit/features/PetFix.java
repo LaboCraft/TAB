@@ -1,11 +1,16 @@
 package me.neznamy.tab.platforms.bukkit.features;
 
-import me.neznamy.tab.api.TabAPI;
-import me.neznamy.tab.api.TabFeature;
+import lombok.Getter;
+import me.neznamy.tab.api.feature.PacketReceiveListener;
+import me.neznamy.tab.api.feature.PacketSendListener;
+import me.neznamy.tab.api.feature.TabFeature;
 import me.neznamy.tab.api.TabPlayer;
-import me.neznamy.tab.platforms.bukkit.nms.NMSStorage;
+import me.neznamy.tab.platforms.bukkit.nms.storage.packet.PacketPlayOutEntityMetadataStorage;
+import me.neznamy.tab.platforms.bukkit.nms.storage.packet.PacketPlayOutSpawnEntityLivingStorage;
 import me.neznamy.tab.platforms.bukkit.nms.datawatcher.DataWatcher;
 import me.neznamy.tab.platforms.bukkit.nms.datawatcher.DataWatcherItem;
+import me.neznamy.tab.platforms.bukkit.nms.datawatcher.DataWatcherObject;
+import me.neznamy.tab.platforms.bukkit.nms.storage.nms.NMSStorage;
 
 import java.util.ConcurrentModificationException;
 import java.util.List;
@@ -20,15 +25,15 @@ import java.util.WeakHashMap;
  * Since 1.16 this results in client sending entity use packet twice,
  * so we must cancel the 2nd one to prevent double toggle.
  */
-public class PetFix extends TabFeature {
+public class PetFix extends TabFeature implements PacketReceiveListener, PacketSendListener {
 
-    //nms storage
+    /** NMS Storage reference for quick access */
     private final NMSStorage nms = NMSStorage.getInstance();
 
-    //DataWatcher position of pet owner field
+    /** DataWatcher position of pet owner field */
     private final int petOwnerPosition = getPetOwnerPosition();
 
-    //logger of last interacts to prevent feature not working on 1.16
+    /** Logger of last interacts to prevent feature not working on 1.16 */
     private final WeakHashMap<TabPlayer, Long> lastInteractFix = new WeakHashMap<>();
 
     /**
@@ -43,13 +48,7 @@ public class PetFix extends TabFeature {
      */
     private static final int INTERACT_COOLDOWN = 160;
 
-    /**
-     * Constructs new instance with given parameter
-     */
-    public PetFix() {
-        super("Pet name fix", null);
-        TabAPI.getInstance().debug("Loaded PetFix feature");
-    }
+    @Getter private final String featureName = "Pet name fix";
 
     /**
      * Returns position of pet owner field based on server version
@@ -94,6 +93,13 @@ public class PetFix extends TabFeature {
         return false;
     }
 
+    /**
+     * Checks if the provided entity use action is INTERACT or not.
+     *
+     * @param   action
+     *          Action to check
+     * @return {@code true} if action is INTERACT, {@code false} if not.
+     */
     private boolean isInteract(Object action) {
         if (nms.getMinorVersion() >= 17) {
             return nms.PacketPlayInUseEntity$d.isInstance(action);
@@ -111,32 +117,40 @@ public class PetFix extends TabFeature {
     @SuppressWarnings("unchecked")
     @Override
     public void onPacketSend(TabPlayer receiver, Object packet) throws ReflectiveOperationException {
-        if (nms.PacketPlayOutEntityMetadata.isInstance(packet)) {
+        if (PacketPlayOutEntityMetadataStorage.CLASS.isInstance(packet)) {
             Object removedEntry = null;
-            List<Object> items = (List<Object>) nms.PacketPlayOutEntityMetadata_LIST.get(packet);
+            List<Object> items = (List<Object>) PacketPlayOutEntityMetadataStorage.LIST.get(packet);
             if (items == null) return;
             try {
                 for (Object item : items) {
                     if (item == null) continue;
-                    if (nms.DataWatcherObject_SLOT.getInt(nms.DataWatcherItem_TYPE.get(item)) == petOwnerPosition) {
-                        Object value = nms.DataWatcherItem_VALUE.get(item);
+                    int slot;
+                    Object value;
+                    if (nms.is1_19_3Plus()) {
+                        slot = DataWatcher.DataValue_POSITION.getInt(item);
+                        value = DataWatcher.DataValue_VALUE.get(item);
+                    } else {
+                        slot = DataWatcherObject.SLOT.getInt(DataWatcherItem.TYPE.get(item));
+                        value = DataWatcherItem.VALUE.get(item);
+                    }
+                    if (slot == petOwnerPosition) {
                         if (value instanceof Optional || value instanceof com.google.common.base.Optional) {
                             removedEntry = item;
                         }
                     }
                 }
+                if (removedEntry != null) items.remove(removedEntry);
             } catch (ConcurrentModificationException e) {
                 //no idea how can this list change in another thread since it's created for the packet but whatever, try again
                 onPacketSend(receiver, packet);
             }
-            if (removedEntry != null) items.remove(removedEntry);
-        } else if (nms.PacketPlayOutSpawnEntityLiving.isInstance(packet) && nms.PacketPlayOutSpawnEntityLiving_DATAWATCHER != null) {
+        } else if (PacketPlayOutSpawnEntityLivingStorage.CLASS.isInstance(packet) && PacketPlayOutSpawnEntityLivingStorage.DATA_WATCHER != null) {
             //<1.15
-            DataWatcher watcher = DataWatcher.fromNMS(nms.PacketPlayOutSpawnEntityLiving_DATAWATCHER.get(packet));
+            DataWatcher watcher = DataWatcher.fromNMS(PacketPlayOutSpawnEntityLivingStorage.DATA_WATCHER.get(packet));
             DataWatcherItem petOwner = watcher.getItem(petOwnerPosition);
             if (petOwner != null && (petOwner.getValue() instanceof Optional || petOwner.getValue() instanceof com.google.common.base.Optional)) {
                 watcher.removeValue(petOwnerPosition);
-                nms.setField(packet, nms.PacketPlayOutSpawnEntityLiving_DATAWATCHER, watcher.toNMS());
+                PacketPlayOutSpawnEntityLivingStorage.DATA_WATCHER.set(packet, watcher.build());
             }
         }
     }

@@ -1,22 +1,17 @@
-plugins {
-    kotlin("jvm") version "1.6.0"
-    kotlin("kapt") version "1.6.0"
-}
-
 dependencies {
     implementation(projects.shared)
     compileOnly(libs.krypton.api)
     compileOnly(libs.krypton.server) {
         exclude("ca.spottedleaf", "dataconverter")
+        exclude("org.kryptonmc", "nbt-common")
+        exclude("org.kryptonmc", "nbt-extra-kotlin")
+        exclude("org.kryptonmc", "serialization-core")
+        exclude("org.kryptonmc", "serialization-gson")
+        exclude("org.kryptonmc", "serialization-nbt")
     }
-    compileOnly(libs.kotlin.stdlib)
-    compileOnly(libs.via)
-    kapt(libs.krypton.annotationProcessor)
+    compileOnly(libs.spark)
+    annotationProcessor(libs.krypton.annotationProcessor)
 }
-
-tasks.compileKotlin {
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs = listOf("-Xjvm-default=enable")
-    }
+tasks.compileJava {
+    options.release.set(17)
 }

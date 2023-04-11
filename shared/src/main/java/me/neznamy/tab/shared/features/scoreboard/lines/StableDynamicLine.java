@@ -5,8 +5,7 @@ import me.neznamy.tab.api.ProtocolVersion;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.chat.EnumChatFormat;
 import me.neznamy.tab.api.chat.rgb.RGBUtils;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardTeam;
-import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.api.feature.Refreshable;
 import me.neznamy.tab.shared.TAB;
 import me.neznamy.tab.shared.features.scoreboard.ScoreboardImpl;
 
@@ -16,7 +15,7 @@ import me.neznamy.tab.shared.features.scoreboard.ScoreboardImpl;
  *   1.5.x - 1.12.x: 28 - 32 characters (depending on used magic codes)
  *   1.13+: unlimited
  */
-public class StableDynamicLine extends ScoreboardLine {
+public class StableDynamicLine extends ScoreboardLine implements Refreshable {
 
     private final String[] EMPTY_ARRAY = new String[0];
 
@@ -40,7 +39,7 @@ public class StableDynamicLine extends ScoreboardLine {
         if (!parent.getPlayers().contains(refreshed)) return; //player has different scoreboard displayed
         String[] prefixSuffix = replaceText(refreshed, force, false);
         if (prefixSuffix.length == 0) return;
-        refreshed.sendCustomPacket(new PacketPlayOutScoreboardTeam(teamName, prefixSuffix[0], prefixSuffix[1], "always", "always", 0), TabConstants.PacketCategory.SCOREBOARD_LINES);
+        refreshed.getScoreboard().updateTeam(teamName, prefixSuffix[0], prefixSuffix[1], "always", "always", 0);
     }
 
     @Override

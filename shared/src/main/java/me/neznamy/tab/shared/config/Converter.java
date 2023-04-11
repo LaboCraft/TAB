@@ -25,7 +25,7 @@ public class Converter {
      * The method contains a check if the conversion is necessary, so it is always safe
      * to call this method, even if conversion is not needed.
      * <p>
-     * This change was made from 2.8.10 -> 2.9.0
+     * This change was made from 2.8.10 -&gt; 2.9.0
      *
      * @param   animations
      *          animation file to convert
@@ -48,7 +48,7 @@ public class Converter {
      *          if an I/O operation with the files fails
      */
     public void convertToV3(ConfigurationFile currentConfig) throws IOException {
-        if (currentConfig.hasConfigOption("mysql")) return;
+        if (!currentConfig.hasConfigOption("change-nametag-prefix-suffix")) return;
         TAB.getInstance().sendConsoleMessage("&e--------------------------------------------------------------",true);
         TAB.getInstance().sendConsoleMessage("&ePerforming configuration conversion from 2.9.2 to 3.0.0",true);
         TAB.getInstance().sendConsoleMessage("&ePlease note that this may not be 100% accurate",true);
@@ -118,7 +118,6 @@ public class Converter {
             newConfig.set("scoreboard-teams.disable-in-servers", oldConfig.getStringList("disable-features-in-servers.nametag", Collections.singletonList("disabledserver")));
         } else {
             newConfig.set("scoreboard-teams.unlimited-nametag-mode.enabled", oldConfig.getBoolean("unlimited-nametag-prefix-suffix-mode.enabled", false));
-            newConfig.set("scoreboard-teams.unlimited-nametag-mode.use-marker-tag-for-1-8-x-clients", oldConfig.getBoolean("unlimited-nametag-prefix-suffix-mode.use-marker-tag-for-1-8-x-clients", false));
             newConfig.set("scoreboard-teams.unlimited-nametag-mode.disable-on-boats", oldConfig.getBoolean("unlimited-nametag-prefix-suffix-mode.disable-on-boats", true));
             newConfig.set("scoreboard-teams.unlimited-nametag-mode.space-between-lines", oldConfig.getBoolean("unlimited-nametag-prefix-suffix-mode.space-between-lines", true));
             newConfig.set("scoreboard-teams.unlimited-nametag-mode.disable-in-worlds", oldConfig.getStringList("disable-features-in-worlds.unlimited-nametags", Collections.singletonList("disabledworld")));
@@ -136,7 +135,7 @@ public class Converter {
         } else {
             newConfig.set("scoreboard-teams.case-sensitive-sorting", true);
             newConfig.set("scoreboard-teams.unlimited-nametag-mode.dynamic-lines", Arrays.asList("abovename","nametag","belowname","another"));
-            newConfig.set("scoreboard-teams.unlimited-nametag-mode.static-lines", new HashMap<String, Object>(){{put("myCustomLine", 0.66);}});
+            newConfig.set("scoreboard-teams.unlimited-nametag-mode.static-lines", new HashMap<String, Object>() {{put("myCustomLine", 0.66);}});
             sortingType = oldConfig.getBoolean("sort-players-by-permissions", false) ? "GROUP_PERMISSIONS" : "GROUPS";
             sortingPlaceholder = "";
         }
@@ -210,7 +209,7 @@ public class Converter {
                 for (Object bar : entry.getValue()) {
                     if (!bars.containsKey(bar)) continue;
                     activeBossBars.add(bar);
-                    if (bars.get(bar).containsKey("display-condition")){
+                    if (bars.get(bar).containsKey("display-condition")) {
                         bars.get(bar).put("display-condition", bars.get(bar).get("display-condition") + ";%" + separator + "%=" + entry.getKey());
                     } else {
                         bars.get(bar).put("display-condition", "%" + separator + "%=" + entry.getKey());
@@ -268,7 +267,7 @@ public class Converter {
         }
         newConfig.set("scoreboard.scoreboards.admin.display-condition", "permission:tab.scoreboard.admin");
         newConfig.set("scoreboard.scoreboards.admin.title", "Admin scoreboard");
-        newConfig.set("scoreboard.scoreboards.admin.lines", Arrays.asList("%animation:MyAnimation1%", "&6Online:", "* &eOnline&7: &f%online%&7/&4%maxplayers%",
+        newConfig.set("scoreboard.scoreboards.admin.lines", Arrays.asList("%animation:MyAnimation1%", "&6Online:", "* &eOnline&7: &f%online%&7",
                 "* &eCurrent World&7: &f%worldonline%", "* &eStaff&7: &f%staffonline%", " ", "&6Server Info:", "* &bTPS&7: %tps%",
                 "* &bUptime&7: &f%server_uptime%", "* &bMemory&7: &f%memory-used%&7/&4%memory-max%", "%animation:MyAnimation1%"));
         newConfig.set("scoreboard.scoreboards.scoreboard1.title", "Default");
@@ -333,13 +332,14 @@ public class Converter {
         newConfig.set("mysql.username", "user");
         newConfig.set("mysql.password", "password");
 
+        newConfig.set("fix-pet-names.enabled", oldConfig.getBoolean("fix-pet-names", false));
+
         if (TAB.getInstance().getServerVersion() == ProtocolVersion.PROXY) {
             newConfig.set("global-playerlist", oldConfig.getConfigurationSection("global-playerlist"));
             newConfig.set("global-playerlist.update-latency", false);
             newConfig.set("use-bukkit-permissions-manager", false);
         } else {
             newConfig.set("per-world-playerlist", oldConfig.getConfigurationSection("per-world-playerlist"));
-            newConfig.set("fix-pet-names.enabled", oldConfig.getBoolean("fix-pet-names", false));
         }
     }
 
@@ -380,6 +380,9 @@ public class Converter {
     public void removeOldOptions(ConfigurationFile config) {
         if (config.hasConfigOption("placeholders.remove-strings")) {
             config.set("placeholders.remove-strings", null);
+        }
+        if (config.hasConfigOption("scoreboard-teams.unlimited-nametag-mode.use-marker-tag-for-1-8-x-clients")) {
+            config.set("scoreboard-teams.unlimited-nametag-mode.use-marker-tag-for-1-8-x-clients", null);
         }
     }
 }

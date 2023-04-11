@@ -1,5 +1,10 @@
 package me.neznamy.tab.shared;
 
+import lombok.Getter;
+import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.api.chat.EnumChatFormat;
+import me.neznamy.tab.api.chat.IChatBaseComponent;
+
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -7,29 +12,35 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
 import java.text.SimpleDateFormat;
-import java.util.*;
-
-import me.neznamy.tab.api.TabConstants;
-import me.neznamy.tab.api.chat.EnumChatFormat;
-import me.neznamy.tab.api.chat.IChatBaseComponent;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
 
 /**
  * An error assistant to print internal errors into error file
  * and warn user about misconfiguration
  */
+
 public class ErrorManager {
 
     /** Date format used in error messages */
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy - HH:mm:ss - ");
 
     /** errors.log file for internal plugin errors */
-    private final File errorLog = new File(TAB.getInstance().getDataFolder(), "errors.log");
+    private final File errorLog;
 
     /** anti-override.log file when some plugin or server itself attempts to override the plugin */
-    private final File antiOverrideLog = new File(TAB.getInstance().getDataFolder(), "anti-override.log");
+    @Getter private final File antiOverrideLog;
 
     /** placeholder-errors.log file for errors thrown by placeholders */
-    private final File placeholderErrorLog = new File(TAB.getInstance().getDataFolder(), "placeholder-errors.log");
+    private final File placeholderErrorLog;
+
+    public ErrorManager(TAB tab) {
+        errorLog = new File(tab.getDataFolder(), "errors.log");
+        antiOverrideLog = new File(tab.getDataFolder(), "anti-override.log");
+        placeholderErrorLog = new File(tab.getDataFolder(), "placeholder-errors.log");
+    }
 
     /**
      * Prints error message into errors.log file
@@ -109,7 +120,7 @@ public class ErrorManager {
     private synchronized void printError(String message, List<String> error, boolean intoConsoleToo, File file) {
         try {
             if (!file.exists()) Files.createFile(file.toPath());
-            try (BufferedWriter buf = new BufferedWriter(new FileWriter(file, true))){
+            try (BufferedWriter buf = new BufferedWriter(new FileWriter(file, true))) {
                 if (message != null) {
                     if (file.length() < 1000000)
                         buf.write(dateFormat.format(new Date()) + IChatBaseComponent.fromColoredText("&c[TAB v" + TabConstants.PLUGIN_VERSION + "] ").toRawText() + EnumChatFormat.decolor(message) + System.getProperty("line.separator"));
@@ -227,7 +238,8 @@ public class ErrorManager {
     }
 
     /**
-     * Makes interval divisible by 50 and sends error message if it was not already or was 0 or less
+     * Makes interval divisible by {@link me.neznamy.tab.api.TabConstants.Placeholder#MINIMUM_REFRESH_INTERVAL}
+     * and sends error message if it was not already or was 0 or less
      *
      * @param   name
      *          name of animation used in error message
@@ -244,10 +256,10 @@ public class ErrorManager {
             startupWarn(String.format("Animation \"&e%s&c\" has refresh interval of %s. Refresh cannot be negative! &bUsing 1000.", name, interval));
             return 1000;
         }
-        if (interval % 50 != 0) {
-            int newInterval = interval - interval%50;
-            if (newInterval == 0) newInterval = 50;
-            startupWarn(String.format("Animation \"&e%s&c\" has refresh interval of %s which is not divisible by 50! &bUsing %s.", name, interval, newInterval));
+        if (interval % TabConstants.Placeholder.MINIMUM_REFRESH_INTERVAL != 0) {
+            int newInterval = interval - interval % TabConstants.Placeholder.MINIMUM_REFRESH_INTERVAL;
+            if (newInterval == 0) newInterval = TabConstants.Placeholder.MINIMUM_REFRESH_INTERVAL;
+            startupWarn(String.format("Animation \"&e%s&c\" has refresh interval of %s which is not divisible by " + TabConstants.Placeholder.MINIMUM_REFRESH_INTERVAL + "! &bUsing %s.", name, interval, newInterval));
             return newInterval;
         }
         return interval;
@@ -292,14 +304,5 @@ public class ErrorManager {
      */
     public void missingAttribute(String objectType, Object objectName, String attribute) {
         startupWarn(objectType + " \"&e" + objectName + "&c\" is missing \"&e" + attribute + "&c\" attribute!");
-    }
-
-    /**
-     * Returns anti-override.log file
-     *
-     * @return  anti-override.log file
-     */
-    public File getAntiOverrideLog() {
-        return antiOverrideLog;
     }
 }

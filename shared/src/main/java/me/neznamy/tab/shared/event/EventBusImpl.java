@@ -1,6 +1,8 @@
 package me.neznamy.tab.shared.event;
 
 import java.lang.reflect.Method;
+
+import lombok.AllArgsConstructor;
 import me.neznamy.tab.api.event.EventBus;
 import me.neznamy.tab.api.event.EventHandler;
 import me.neznamy.tab.api.event.Subscribe;
@@ -25,7 +27,7 @@ public final class EventBusImpl implements EventBus {
         this.bus = new SimpleEventBus<TabEvent>(TabEvent.class) {
 
             @Override
-            protected boolean shouldPost(@NonNull TabEvent event, @NonNull EventSubscriber subscriber) {
+            protected boolean shouldPost(@NonNull TabEvent event, @NonNull EventSubscriber<?> subscriber) {
                 return true;
             }
         };
@@ -82,13 +84,10 @@ public final class EventBusImpl implements EventBus {
         }
     }
 
+    @AllArgsConstructor
     private static final class HandlerWrapper<E> implements EventSubscriber<E> {
 
         private final EventHandler<E> handler;
-
-        public HandlerWrapper(final EventHandler<E> handler) {
-            this.handler = handler;
-        }
 
         @Override
         public void invoke(@NonNull E event) {

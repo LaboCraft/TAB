@@ -1,50 +1,47 @@
 package me.neznamy.tab.platforms.bukkit;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.text.NumberFormat;
-import java.util.Locale;
-
 import me.neznamy.tab.api.TabConstants;
 import me.neznamy.tab.api.TabPlayer;
-import me.neznamy.tab.api.placeholder.PlayerPlaceholder;
+import me.neznamy.tab.api.placeholder.PlaceholderManager;
 import me.neznamy.tab.shared.TAB;
-import net.ess3.api.events.NickChangeEvent;
+import me.neznamy.tab.shared.placeholders.UniversalPlaceholderRegistry;
+import net.milkbowl.vault.chat.Chat;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.HandlerList;
-import org.bukkit.event.Listener;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.RegisteredServiceProvider;
 
-import com.earth2me.essentials.Essentials;
-
-import me.neznamy.tab.api.placeholder.PlaceholderManager;
-import me.neznamy.tab.shared.placeholders.UniversalPlaceholderRegistry;
-import net.milkbowl.vault.chat.Chat;
-import org.bukkit.plugin.java.JavaPlugin;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.UUID;
 
 /**
  * Bukkit registry to register bukkit-only and universal placeholders
  */
 public class BukkitPlaceholderRegistry extends UniversalPlaceholderRegistry {
 
-    /** Number formatter for 2 decimal places */
-    private final NumberFormat numberFormat = NumberFormat.getNumberInstance(Locale.US);
-
-    private final JavaPlugin plugin;
+    /** Vault Chat hook */
     private Chat chat;
-    private final Plugin essentials = Bukkit.getPluginManager().getPlugin(TabConstants.Plugin.ESSENTIALS);
+
+    /** NMS server to get TPS from on spigot */
     private Object server;
+
+    /** TPS field*/
     private Field recentTps;
+
+    /** Detection for presence of Paper's TPS getter */
     private Method paperTps;
+
+    /** Detection for presence of Paper's MSPT getter */
     private Method paperMspt;
+
+    /** Detection for presence of Purpur's AFK getter */
     private Method purpurIsAfk;
 
-    public BukkitPlaceholderRegistry(JavaPlugin plugin) {
-        this.plugin = plugin;
-        numberFormat.setMaximumFractionDigits(2);
+    /**
+     * Constructs new instance and loads hooks
+     */
+    public BukkitPlaceholderRegistry() {
         if (Bukkit.getPluginManager().isPluginEnabled(TabConstants.Plugin.VAULT)) {
             RegisteredServiceProvider<Chat> rspChat = Bukkit.getServicesManager().getRegistration(Chat.class);
             if (rspChat != null) chat = rspChat.getProvider();
@@ -63,7 +60,6 @@ public class BukkitPlaceholderRegistry extends UniversalPlaceholderRegistry {
     @SuppressWarnings("deprecation")
     @Override
     public void registerPlaceholders(PlaceholderManager manager) {
-        super.registerPlaceholders(manager);
         manager.registerPlayerPlaceholder(TabConstants.Placeholder.DISPLAY_NAME, 500, p -> ((Player) p.getPlayer()).getDisplayName());
         if (paperTps != null) {
             manager.registerServerPlaceholder(TabConstants.Placeholder.TPS, 1000, () -> formatTPS(Bukkit.getTPS()[0]));
@@ -79,31 +75,22 @@ public class BukkitPlaceholderRegistry extends UniversalPlaceholderRegistry {
             manager.registerServerPlaceholder(TabConstants.Placeholder.TPS, -1, () -> -1);
         }
         if (paperMspt != null) {
-            manager.registerServerPlaceholder(TabConstants.Placeholder.MSPT, 1000, () -> numberFormat.format(Bukkit.getAverageTickTime()));
+            manager.registerServerPlaceholder(TabConstants.Placeholder.MSPT, 1000, () -> format(Bukkit.getAverageTickTime()));
         }
+        Plugin essentials = Bukkit.getPluginManager().getPlugin(TabConstants.Plugin.ESSENTIALS);
         manager.registerPlayerPlaceholder(TabConstants.Placeholder.AFK, 500, p -> {
-            if (essentials != null && ((Essentials)essentials).getUser(p.getUniqueId()).isAfk()) return true;
+            if (essentials != null) {
+                try {
+                    Object user = essentials.getClass().getMethod("getUser", UUID.class).invoke(essentials, p.getUniqueId());
+                    if ((boolean) user.getClass().getMethod("isAfk").invoke(user)) return true;
+                } catch (ReflectiveOperationException e) {
+                    TAB.getInstance().getErrorManager().printError("Failed to get AFK status of " + p.getName() + " using Essentials", e);
+                }
+            }
             return purpurIsAfk != null && ((Player)p.getPlayer()).isAfk();
         });
-        if (essentials != null) {
-            PlayerPlaceholder nick = manager.registerPlayerPlaceholder(TabConstants.Placeholder.ESSENTIALS_NICK, -1, p -> {
-                String nickname = ((Essentials)essentials).getUser(p.getUniqueId()).getNickname();
-                return nickname == null ? p.getName() : nickname;
-            });
-            Listener nickListener = new Listener() {
-                @EventHandler
-                public void onNickChange(NickChangeEvent e) {
-                    String name = e.getValue() == null ? e.getAffected().getName() : e.getValue();
-                    TabPlayer player = TAB.getInstance().getPlayer(e.getAffected().getUUID());
-                    if (player == null) return;
-                    nick.updateValue(player, name);
-                }
-            };
-            nick.enableTriggerMode(() -> Bukkit.getPluginManager().registerEvents(nickListener, plugin),
-                    () -> HandlerList.unregisterAll(nickListener));
-        } else {
-            manager.registerPlayerPlaceholder(TabConstants.Placeholder.ESSENTIALS_NICK, -1, TabPlayer::getName);
-        }
+        // Removed placeholder, keeping the implementation to avoid placeholder breaking for users on update
+        manager.registerPlayerPlaceholder(TabConstants.Placeholder.ESSENTIALS_NICK, -1, TabPlayer::getName);
 
         if (chat != null) {
             manager.registerPlayerPlaceholder(TabConstants.Placeholder.VAULT_PREFIX, 1000, p -> chat.getPlayerPrefix((Player) p.getPlayer()));
@@ -113,9 +100,6 @@ public class BukkitPlaceholderRegistry extends UniversalPlaceholderRegistry {
             manager.registerServerPlaceholder(TabConstants.Placeholder.VAULT_SUFFIX, -1, () -> "");
         }
         manager.registerPlayerPlaceholder(TabConstants.Placeholder.HEALTH, 100, p -> (int) Math.ceil(((Player) p.getPlayer()).getHealth()));
-    }
-
-    private String formatTPS(double tps) {
-        return numberFormat.format(Math.min(20, tps));
+        super.registerPlaceholders(manager);
     }
 }

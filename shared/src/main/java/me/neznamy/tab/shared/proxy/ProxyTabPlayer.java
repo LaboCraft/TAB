@@ -1,11 +1,18 @@
 package me.neznamy.tab.shared.proxy;
 
 import com.google.common.collect.Lists;
+import com.google.common.io.ByteArrayDataOutput;
+import com.google.common.io.ByteStreams;
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.Setter;
 import me.neznamy.tab.shared.ITabPlayer;
 import me.neznamy.tab.shared.TAB;
 import me.neznamy.tab.api.TabConstants;
 import me.neznamy.tab.shared.features.nametags.unlimited.NameTagX;
 import me.neznamy.tab.shared.permission.VaultBridge;
+import me.neznamy.tab.shared.placeholders.expansion.EmptyTabExpansion;
+import me.neznamy.tab.shared.placeholders.expansion.TabExpansion;
 
 import java.util.HashMap;
 import java.util.List;
@@ -19,16 +26,16 @@ import java.util.UUID;
 public abstract class ProxyTabPlayer extends ITabPlayer {
 
     /** Player's vanish status from backend server */
-    private boolean vanished;
+    @Getter @Setter private boolean vanished;
 
     /** Player's disguise status from backend server */
-    private boolean disguised;
+    @Getter @Setter private boolean disguised;
 
     /** Player's invisibility potion status from backend server */
-    private boolean invisible;
+    @Setter private boolean invisibilityPotion;
 
     /** Player's boat vehicle status for unlimited NameTags */
-    private boolean onBoat;
+    @Getter @Setter private boolean onBoat;
 
     /** Map of player's requested permissions */
     private final Map<String, Boolean> permissions = new HashMap<>();
@@ -47,11 +54,9 @@ public abstract class ProxyTabPlayer extends ITabPlayer {
      *          Player's server
      * @param   protocolVersion
      *          Player's protocol network id
-     * @param   useRealId
-     *          Whether tablist uses real uuid or offline
      */
-    protected ProxyTabPlayer(Object player, UUID uniqueId, String name, String server, int protocolVersion, boolean useRealId) {
-        super(player, uniqueId, name, server, "N/A", protocolVersion, useRealId);
+    protected ProxyTabPlayer(Object player, UUID uniqueId, String name, String server, int protocolVersion) {
+        super(player, uniqueId, name, server, "N/A", protocolVersion, TAB.getInstance().getConfiguration().isOnlineUuidInTabList());
         sendJoinPluginMessage();
     }
 
@@ -60,10 +65,11 @@ public abstract class ProxyTabPlayer extends ITabPlayer {
      * joined, containing all plugin configuration data.
      */
     public void sendJoinPluginMessage() {
+        TabExpansion expansion = TAB.getInstance().getPlaceholderManager().getTabExpansion();
         List<Object> args = Lists.newArrayList("PlayerJoin", getVersion().getNetworkId(),
                 TAB.getInstance().getGroupManager().getPlugin() instanceof VaultBridge && !TAB.getInstance().getGroupManager().isGroupsByPermissions(),
                 TAB.getInstance().getFeatureManager().isFeatureEnabled(TabConstants.Feature.PET_FIX),
-                TAB.getInstance().getPlaceholderManager().getTabExpansion() != null);
+                !(expansion instanceof EmptyTabExpansion));
         ProxyPlatform platform = (ProxyPlatform) TAB.getInstance().getPlatform();
         Map<String, Integer> placeholders = platform.getBridgePlaceholders();
         args.add(placeholders.size());
@@ -75,7 +81,7 @@ public abstract class ProxyTabPlayer extends ITabPlayer {
         boolean enabled = nametagx != null && !nametagx.getDisabledUnlimitedServers().contains(getServer());
         args.add(enabled);
         if (enabled) {
-            args.add(nametagx.isMarkerFor18x());
+            args.add(true);
             args.add(0.26d);
             args.add(nametagx.isDisableOnBoats());
             args.add(nametagx.isArmorStandsAlwaysVisible());
@@ -89,47 +95,8 @@ public abstract class ProxyTabPlayer extends ITabPlayer {
                 args.add(Double.valueOf(String.valueOf(entry.getValue())));
             }
         }
-        ((ProxyPlatform)TAB.getInstance().getPlatform()).getPluginMessageHandler().sendMessage(this, args.toArray());
-    }
-
-    /**
-     * Sets vanish status to provided value
-     *
-     * @param   vanished
-     *          new vanish status
-     */
-    public void setVanished(boolean vanished) {
-        this.vanished = vanished;
-    }
-
-    /**
-     * Sets disguise status to provided value
-     *
-     * @param   disguised
-     *          new disguise status
-     */
-    public void setDisguised(boolean disguised) {
-        this.disguised = disguised;
-    }
-
-    /**
-     * Sets invisibility status to provided value
-     *
-     * @param   invisible
-     *          new invisibility status
-     */
-    public void setInvisible(boolean invisible) {
-        this.invisible = invisible;
-    }
-
-    /**
-     * Sets boat status to provided value
-     *
-     * @param   onBoat
-     *          new boat status
-     */
-    public void setOnBoat(boolean onBoat) {
-        this.onBoat = onBoat;
+        sendPluginMessage(args.toArray());
+        if (expansion instanceof ProxyTabExpansion) ((ProxyTabExpansion) expansion).resendAllValues(this);
     }
 
     /**
@@ -142,16 +109,6 @@ public abstract class ProxyTabPlayer extends ITabPlayer {
      */
     public void setHasPermission(String permission, boolean value) {
         permissions.put(permission, value);
-    }
-
-    /**
-     * Returns {@code true} if player is on boat, {@code false} if not.
-     * This requires bridge installed to forward the data.
-     *
-     * @return  {@code true} if on boat, {@code false} if not
-     */
-    public boolean isOnBoat() {
-        return onBoat;
     }
 
     /**
@@ -171,27 +128,60 @@ public abstract class ProxyTabPlayer extends ITabPlayer {
      */
     public abstract void sendPluginMessage(byte[] message);
 
-    @Override
-    public boolean isVanished() {
-        return vanished;
-    }
-
-    @Override
-    public boolean isDisguised() {
-        return disguised;
-    }
+    /**
+     * Returns player's chat signing key (1.19+), chat session (1.19.3+)
+     *
+     * @return  Player's chat session
+     */
+    public abstract Object getChatSession();
 
     @Override
     public boolean hasInvisibilityPotion() {
-        return invisible;
+        return invisibilityPotion;
     }
 
     @Override
     public boolean hasPermission(String permission) {
         if (TAB.getInstance().getConfiguration().isBukkitPermissions()) {
-            ((ProxyPlatform)TAB.getInstance().getPlatform()).getPluginMessageHandler().sendMessage(this, "Permission", permission);
+            sendPluginMessage("Permission", permission);
             return permissions != null && permissions.getOrDefault(permission, false);
         }
         return hasPermission0(permission);
+    }
+
+    /**
+     * Sends plugin message
+     *
+     * @param   args
+     *          Messages to encode
+     */
+    @SuppressWarnings("UnstableApiUsage")
+    public void sendPluginMessage(Object... args) {
+        ByteArrayDataOutput out = ByteStreams.newDataOutput();
+        for (Object arg : args) {
+            writeObject(out, arg);
+        }
+        sendPluginMessage(out.toByteArray());
+    }
+
+    /**
+     * Writes object to data input by calling proper write method
+     * based on data type of the object.
+     *
+     * @param   out
+     *          Data output to write to
+     * @param   value
+     *          Value to write
+     */
+    private void writeObject(@NonNull ByteArrayDataOutput out, @NonNull Object value) {
+        if (value instanceof String) {
+            out.writeUTF((String) value);
+        } else if (value instanceof Boolean) {
+            out.writeBoolean((boolean) value);
+        } else if (value instanceof Integer) {
+            out.writeInt((int) value);
+        } else if (value instanceof Double) {
+            out.writeDouble((double) value);
+        } else throw new IllegalArgumentException("Unhandled message data type " + value.getClass().getName());
     }
 }

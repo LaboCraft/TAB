@@ -9,6 +9,10 @@ import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.proxy.Player;
 import me.neznamy.tab.api.TabAPI;
 import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.shared.TAB;
+import me.neznamy.tab.shared.features.bossbar.BossBarManagerImpl;
+import me.neznamy.tab.shared.features.scoreboard.ScoreboardManagerImpl;
+import me.neznamy.tab.shared.proxy.ProxyPlatform;
 
 /**
  * The core for velocity forwarding events into all enabled features
@@ -22,9 +26,9 @@ public class VelocityEventListener {
      *          disconnect event
      */
     @Subscribe
-    public void onQuit(DisconnectEvent e){
+    public void onQuit(DisconnectEvent e) {
         if (TabAPI.getInstance().isPluginDisabled()) return;
-        TabAPI.getInstance().getThreadManager().runTask(() ->
+        TAB.getInstance().getCPUManager().runTask(() ->
                 TabAPI.getInstance().getFeatureManager().onQuit(TabAPI.getInstance().getPlayer(e.getPlayer().getUniqueId())));
     }
     
@@ -35,14 +39,14 @@ public class VelocityEventListener {
      *          connect event
      */
     @Subscribe
-    public void onConnect(ServerPostConnectEvent e){
+    public void onConnect(ServerPostConnectEvent e) {
         if (TabAPI.getInstance().isPluginDisabled()) return;
         Player p = e.getPlayer();
-        TabAPI.getInstance().getThreadManager().runTaskLater(200, () -> {
+        TAB.getInstance().getCPUManager().runTask(() -> {
             if (TabAPI.getInstance().getPlayer(p.getUniqueId()) == null) {
-                TabAPI.getInstance().getThreadManager().runTask(() -> TabAPI.getInstance().getFeatureManager().onJoin(new VelocityTabPlayer(p)));
+                TabAPI.getInstance().getFeatureManager().onJoin(new VelocityTabPlayer(p));
             } else {
-                TabAPI.getInstance().getFeatureManager().onServerChange(p.getUniqueId(), p.getCurrentServer().isPresent() ? p.getCurrentServer().get().getServerInfo().getName() : "null");
+                TabAPI.getInstance().getFeatureManager().onServerChange(p.getUniqueId(), p.getCurrentServer().get().getServerInfo().getName());
             }
         });
     }
@@ -56,24 +60,30 @@ public class VelocityEventListener {
     @Subscribe
     public void onCommand(CommandExecuteEvent e) {
         if (TabAPI.getInstance().isPluginDisabled()) return;
-        if (e.getCommandSource() instanceof Player && TabAPI.getInstance().getFeatureManager().onCommand(
-                TabAPI.getInstance().getPlayer(((Player)e.getCommandSource()).getUniqueId()), e.getCommand()))
-            e.setResult(CommandResult.denied());
+        // Imagine not allowing to cancel a command while it works completely fine on BungeeCord and Bukkit and everywhere else
+        BossBarManagerImpl bossbar = (BossBarManagerImpl) TabAPI.getInstance().getFeatureManager().getFeature(TabConstants.Feature.BOSS_BAR);
+        if (bossbar != null && bossbar.getToggleCommand().substring(1).equals(e.getCommand())) {
+            e.setResult(CommandResult.command("vtab bossbar"));
+        }
+        ScoreboardManagerImpl scoreboard = (ScoreboardManagerImpl) TabAPI.getInstance().getFeatureManager().getFeature(TabConstants.Feature.SCOREBOARD);
+        if (scoreboard != null && scoreboard.getToggleCommand().substring(1).equals(e.getCommand())) {
+            e.setResult(CommandResult.command("vtab scoreboard"));
+        }
     }
 
     /**
-     * Listener to plugin message event
+     * Listener to plugin message event to process messages coming from bridge
      *
      * @param   event
      *          plugin message event
      */
     @Subscribe
-    public void onPluginMessageEvent(PluginMessageEvent event){
+    public void onPluginMessageEvent(PluginMessageEvent event) {
         if (!event.getIdentifier().getId().equalsIgnoreCase(TabConstants.PLUGIN_MESSAGE_CHANNEL_NAME)) return;
         if (event.getTarget() instanceof Player) {
             event.setResult(PluginMessageEvent.ForwardResult.handled());
-            Main.getInstance().getPlatform().getPluginMessageHandler().onPluginMessage(
-                    ((Player) event.getTarget()).getUniqueId(), event.getData());
+            ((ProxyPlatform)TAB.getInstance().getPlatform()).getPluginMessageHandler().onPluginMessage(
+                    ((Player) event.getTarget()).getUniqueId(), ((Player) event.getTarget()).getUsername(), event.getData());
         }
     }
 }

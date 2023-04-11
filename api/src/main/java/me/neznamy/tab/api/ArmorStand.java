@@ -1,5 +1,9 @@
 package me.neznamy.tab.api;
 
+/**
+ * Interface representing an armor stand attached to player
+ * for displaying text in game.
+ */
 public interface ArmorStand {
 
     /**
@@ -7,7 +11,7 @@ public interface ArmorStand {
      *
      * @return  true if static, false if dynamic
      */
-    boolean hasStaticOffset();
+    boolean isStaticOffset();
     
     /**
      * Changes offset of the armor stand
@@ -30,41 +34,7 @@ public interface ArmorStand {
      * @return  property for armor stand's name
      */
     Property getProperty();
-    
-    /**
-     * Teleports armor stand to owner's current location for everyone in range
-     */
-    void teleport();
-    
-    /**
-     * Teleports armor stand to owner's current location for specified player
-     *
-     * @param   viewer
-     *          player to send packet to
-     */
-    void teleport(TabPlayer viewer);
-    
-    /**
-     * Changes sneaking flag and sends packets to everyone in range
-     *
-     * @param   sneaking
-     *          new sneaking status
-     */
-    void sneak(boolean sneaking);
-    
-    /**
-     * DeSpawns armor stand for everyone
-     */
-    void destroy();
-    
-    /**
-     * DeSpawns armor stand for specified player
-     *
-     * @param   viewer
-     *          player to send packet to
-     */
-    void destroy(TabPlayer viewer);
-    
+
     /**
      * Updates armor stand's name if needed
      */
@@ -84,14 +54,4 @@ public interface ArmorStand {
      * @return  entity ID of this armor stand
      */
     int getEntityId();
-    
-    /**
-     * Spawns armor stand for specified player
-     *
-     * @param   viewer
-     *          player to spawn for
-     */
-    void spawn(TabPlayer viewer);
-    
-    void respawn(TabPlayer viewer);
 }

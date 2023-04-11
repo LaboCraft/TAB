@@ -9,14 +9,19 @@ dependencies {
     }
     compileOnlyApi(libs.snakeyaml)
     api(libs.yamlAssist)
-    compileOnlyApi(libs.gson)
     compileOnlyApi(libs.adventureMiniMessage)
     compileOnlyApi(libs.adventureApi)
     compileOnlyApi(libs.adventureLegacy)
+    compileOnlyApi(libs.via)
 }
 
 blossom {
-    replaceToken("@plugin_version@", project.version)
+    replaceToken("@name@", rootProject.name)
+    replaceToken("@id@", rootProject.ext.get("id")!!.toString())
+    replaceToken("@version@", project.version)
+    replaceToken("@description@", project.description)
+    replaceToken("@website@", rootProject.ext.get("website")!!.toString())
+    replaceToken("@author@", rootProject.ext.get("author")!!.toString())
     replaceTokenIn("src/main/java/me/neznamy/tab/api/TabConstants.java")
 }
 

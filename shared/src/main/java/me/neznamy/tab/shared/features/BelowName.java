@@ -1,54 +1,59 @@
 package me.neznamy.tab.shared.features;
 
-import java.util.Arrays;
-import java.util.Objects;
-
-import me.neznamy.tab.api.TabFeature;
-import me.neznamy.tab.api.TabPlayer;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardDisplayObjective;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardObjective;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardObjective.EnumScoreboardHealthDisplay;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardScore;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardScore.Action;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import me.neznamy.tab.api.*;
+import me.neznamy.tab.api.feature.*;
 import me.neznamy.tab.shared.TAB;
-import me.neznamy.tab.api.TabConstants;
 import me.neznamy.tab.shared.features.redis.RedisSupport;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * Feature handler for BelowName feature
  */
-public class BelowName extends TabFeature {
+public class BelowName extends TabFeature implements JoinListener, LoginPacketListener, Loadable, UnLoadable,
+        WorldSwitchListener, ServerSwitchListener, Refreshable {
 
     public static final String OBJECTIVE_NAME = "TAB-BelowName";
-    public static final int DISPLAY_SLOT = 2;
 
+    @Getter private final String refreshDisplayName = "Updating BelowName number";
+    @Getter private final String featureName = "BelowName";
     private final String rawNumber = TAB.getInstance().getConfiguration().getConfig().getString("belowname-objective.number", TabConstants.Placeholder.HEALTH);
     private final String rawText = TAB.getInstance().getConfiguration().getConfig().getString("belowname-objective.text", "Health");
-    private final TabFeature textRefresher = new TextRefresher();
+    private final TextRefresher textRefresher = new TextRefresher(this);
+
+    private final RedisSupport redis = (RedisSupport) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.REDIS_BUNGEE);
 
     public BelowName() {
-        super("BelowName", "Updating BelowName number", "belowname-objective");
+        super("belowname-objective");
         TAB.getInstance().getFeatureManager().registerFeature(TabConstants.Feature.BELOW_NAME_TEXT, textRefresher);
-        TAB.getInstance().debug(String.format("Loaded BelowName feature with parameters number=%s, text=%s, disabledWorlds=%s, disabledServers=%s", rawNumber, rawText, Arrays.toString(disabledWorlds), Arrays.toString(disabledServers)));
     }
 
     @Override
     public void load() {
-        for (TabPlayer loaded : TAB.getInstance().getOnlinePlayers()){
+        for (TabPlayer loaded : TAB.getInstance().getOnlinePlayers()) {
             loaded.setProperty(this, TabConstants.Property.BELOWNAME_NUMBER, rawNumber);
             loaded.setProperty(textRefresher, TabConstants.Property.BELOWNAME_TEXT, rawText);
             if (isDisabled(loaded.getServer(), loaded.getWorld())) {
                 addDisabledPlayer(loaded);
                 continue;
             }
-            loaded.sendCustomPacket(new PacketPlayOutScoreboardObjective(0, OBJECTIVE_NAME, loaded.getProperty(TabConstants.Property.BELOWNAME_TEXT).updateAndGet(), EnumScoreboardHealthDisplay.INTEGER), textRefresher);
-            loaded.sendCustomPacket(new PacketPlayOutScoreboardDisplayObjective(DISPLAY_SLOT, OBJECTIVE_NAME), textRefresher);
+            loaded.getScoreboard().registerObjective(OBJECTIVE_NAME, loaded.getProperty(TabConstants.Property.BELOWNAME_TEXT).updateAndGet(), false);
+            loaded.getScoreboard().setDisplaySlot(Scoreboard.DisplaySlot.BELOW_NAME, OBJECTIVE_NAME);
         }
-        for (TabPlayer viewer : TAB.getInstance().getOnlinePlayers()){
+        Map<TabPlayer, Integer> values = new HashMap<>();
+        for (TabPlayer target : TAB.getInstance().getOnlinePlayers()) {
+            if (isDisabledPlayer(target)) continue;
+            values.put(target, getValue(target));
+        }
+        for (TabPlayer viewer : TAB.getInstance().getOnlinePlayers()) {
             if (isDisabledPlayer(viewer)) continue;
-            for (TabPlayer target : TAB.getInstance().getOnlinePlayers()){
-                if (sameServerAndWorld(target, viewer)) {
-                    viewer.sendCustomPacket(new PacketPlayOutScoreboardScore(Action.CHANGE, OBJECTIVE_NAME, target.getNickname(), getValue(target)), this);
+            for (Map.Entry<TabPlayer, Integer> entry : values.entrySet()) {
+                if (sameServerAndWorld(entry.getKey(), viewer)) {
+                    viewer.getScoreboard().setScore(OBJECTIVE_NAME, entry.getKey().getNickname(), entry.getValue());
                 }
             }
         }
@@ -56,9 +61,9 @@ public class BelowName extends TabFeature {
 
     @Override
     public void unload() {
-        for (TabPlayer p : TAB.getInstance().getOnlinePlayers()){
+        for (TabPlayer p : TAB.getInstance().getOnlinePlayers()) {
             if (isDisabledPlayer(p)) continue;
-            p.sendCustomPacket(new PacketPlayOutScoreboardObjective(OBJECTIVE_NAME), textRefresher);
+            p.getScoreboard().unregisterObjective(OBJECTIVE_NAME);
         }
     }
 
@@ -70,16 +75,15 @@ public class BelowName extends TabFeature {
             addDisabledPlayer(connectedPlayer);
             return;
         }
-        connectedPlayer.sendCustomPacket(new PacketPlayOutScoreboardObjective(0, OBJECTIVE_NAME, connectedPlayer.getProperty(TabConstants.Property.BELOWNAME_TEXT).updateAndGet(), EnumScoreboardHealthDisplay.INTEGER), textRefresher);
-        connectedPlayer.sendCustomPacket(new PacketPlayOutScoreboardDisplayObjective(DISPLAY_SLOT, OBJECTIVE_NAME), textRefresher);
+        connectedPlayer.getScoreboard().registerObjective(OBJECTIVE_NAME, connectedPlayer.getProperty(TabConstants.Property.BELOWNAME_TEXT).updateAndGet(), false);
+        connectedPlayer.getScoreboard().setDisplaySlot(Scoreboard.DisplaySlot.BELOW_NAME, OBJECTIVE_NAME);
         int number = getValue(connectedPlayer);
-        for (TabPlayer all : TAB.getInstance().getOnlinePlayers()){
+        for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
             if (sameServerAndWorld(all, connectedPlayer)) {
-                all.sendCustomPacket(new PacketPlayOutScoreboardScore(Action.CHANGE, OBJECTIVE_NAME, connectedPlayer.getNickname(), number), this);
-                connectedPlayer.sendCustomPacket(new PacketPlayOutScoreboardScore(Action.CHANGE, OBJECTIVE_NAME, all.getNickname(), getValue(all)), this);
+                all.getScoreboard().setScore(OBJECTIVE_NAME, connectedPlayer.getNickname(), number);
+                connectedPlayer.getScoreboard().setScore(OBJECTIVE_NAME, all.getNickname(), getValue(all));
             }
         }
-        RedisSupport redis = (RedisSupport) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.REDIS_BUNGEE);
         if (redis != null) redis.updateBelowName(connectedPlayer, connectedPlayer.getProperty(TabConstants.Property.BELOWNAME_NUMBER).get());
     }
 
@@ -99,7 +103,7 @@ public class BelowName extends TabFeature {
             removeDisabledPlayer(p);
         }
         if (disabledNow && !disabledBefore) {
-            p.sendCustomPacket(new PacketPlayOutScoreboardObjective(OBJECTIVE_NAME), textRefresher);
+            p.getScoreboard().unregisterObjective(OBJECTIVE_NAME);
             return;
         }
         if (!disabledNow && disabledBefore) {
@@ -108,13 +112,12 @@ public class BelowName extends TabFeature {
         }
         if (disabledNow) return;
         int number = getValue(p);
-        for (TabPlayer all : TAB.getInstance().getOnlinePlayers()){
+        for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
             if (sameServerAndWorld(all, p)) {
-                all.sendCustomPacket(new PacketPlayOutScoreboardScore(Action.CHANGE, OBJECTIVE_NAME, p.getNickname(), number), this);
-                p.sendCustomPacket(new PacketPlayOutScoreboardScore(Action.CHANGE, OBJECTIVE_NAME, all.getNickname(), getValue(all)), this);
+                all.getScoreboard().setScore(OBJECTIVE_NAME, p.getNickname(), number);
+                p.getScoreboard().setScore(OBJECTIVE_NAME, all.getNickname(), getValue(all));
             }
         }
-        RedisSupport redis = (RedisSupport) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.REDIS_BUNGEE);
         if (redis != null) redis.updateBelowName(p, p.getProperty(TabConstants.Property.BELOWNAME_NUMBER).get());
     }
 
@@ -127,21 +130,21 @@ public class BelowName extends TabFeature {
         if (isDisabledPlayer(refreshed)) return;
         int number = getValue(refreshed);
         for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
-            if (sameServerAndWorld(all, refreshed))
-                all.sendCustomPacket(new PacketPlayOutScoreboardScore(Action.CHANGE, OBJECTIVE_NAME, refreshed.getNickname(), number), this);
+            if (sameServerAndWorld(all, refreshed)) {
+                all.getScoreboard().setScore(OBJECTIVE_NAME, refreshed.getNickname(), number);
+            }
         }
-        RedisSupport redis = (RedisSupport) TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.REDIS_BUNGEE);
         if (redis != null) redis.updateBelowName(refreshed, refreshed.getProperty(TabConstants.Property.BELOWNAME_NUMBER).get());
     }
 
     @Override
     public void onLoginPacket(TabPlayer packetReceiver) {
         if (isDisabledPlayer(packetReceiver)) return;
-        packetReceiver.sendCustomPacket(new PacketPlayOutScoreboardObjective(0, OBJECTIVE_NAME, packetReceiver.getProperty(TabConstants.Property.BELOWNAME_TEXT).updateAndGet(), EnumScoreboardHealthDisplay.INTEGER), textRefresher);
-        packetReceiver.sendCustomPacket(new PacketPlayOutScoreboardDisplayObjective(DISPLAY_SLOT, OBJECTIVE_NAME), textRefresher);
-        for (TabPlayer all : TAB.getInstance().getOnlinePlayers()){
+        packetReceiver.getScoreboard().registerObjective(OBJECTIVE_NAME, packetReceiver.getProperty(TabConstants.Property.BELOWNAME_TEXT).updateAndGet(), false);
+        packetReceiver.getScoreboard().setDisplaySlot(Scoreboard.DisplaySlot.BELOW_NAME, OBJECTIVE_NAME);
+        for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
             if (all.isLoaded() && sameServerAndWorld(all, packetReceiver)) {
-                packetReceiver.sendCustomPacket(new PacketPlayOutScoreboardScore(Action.CHANGE, OBJECTIVE_NAME, all.getNickname(), getValue(all)), this);
+                packetReceiver.getScoreboard().setScore(OBJECTIVE_NAME, all.getNickname(), getValue(all));
             }
         }
     }
@@ -150,16 +153,17 @@ public class BelowName extends TabFeature {
         return player2.getWorld().equals(player1.getWorld()) && Objects.equals(player2.getServer(), player1.getServer());
     }
 
-    public class TextRefresher extends TabFeature {
+    @RequiredArgsConstructor
+    public static class TextRefresher extends TabFeature implements Refreshable {
 
-        public TextRefresher(){
-            super("BelowName", "Updating BelowName text");
-        }
+        @Getter private final String refreshDisplayName = "Updating BelowName text";
+        @Getter private final String featureName = "BelowName";
+        private final BelowName feature;
 
         @Override
         public void refresh(TabPlayer refreshed, boolean force) {
-            if (isDisabledPlayer(refreshed)) return;
-            refreshed.sendCustomPacket(new PacketPlayOutScoreboardObjective(2, OBJECTIVE_NAME, refreshed.getProperty(TabConstants.Property.BELOWNAME_TEXT).updateAndGet(), EnumScoreboardHealthDisplay.INTEGER), textRefresher);
+            if (feature.isDisabledPlayer(refreshed)) return;
+            refreshed.getScoreboard().updateObjective(OBJECTIVE_NAME, refreshed.getProperty(TabConstants.Property.BELOWNAME_TEXT).updateAndGet(), false);
         }
     }
 }

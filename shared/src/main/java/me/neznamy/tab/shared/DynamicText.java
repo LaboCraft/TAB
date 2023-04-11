@@ -3,12 +3,13 @@ package me.neznamy.tab.shared;
 import java.util.ArrayList;
 import java.util.List;
 
+import lombok.Getter;
 import me.neznamy.tab.api.Property;
-import me.neznamy.tab.api.TabFeature;
+import me.neznamy.tab.api.feature.Refreshable;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.chat.EnumChatFormat;
 import me.neznamy.tab.api.chat.rgb.RGBUtils;
-import me.neznamy.tab.shared.features.TabExpansion;
+import me.neznamy.tab.shared.placeholders.expansion.TabExpansion;
 import me.neznamy.tab.shared.placeholders.RelationalPlaceholderImpl;
 
 /**
@@ -25,16 +26,16 @@ public class DynamicText implements Property {
      * Feature defining this text, which will receive refresh function
      * if any of placeholders used in it change value.
      */
-    private final TabFeature listener;
+    private final Refreshable listener;
     
     /** Player this text belongs to */
     private final TabPlayer owner;
     
     /** Raw value as defined in configuration */
-    private String rawValue;
+    @Getter private String originalRawValue;
 
     /** Raw value assigned via API, null if not set */
-    private String temporaryValue;
+    @Getter private String temporaryValue;
 
     /**
      * Raw value using %s for each placeholder ready to be inserted
@@ -73,13 +74,13 @@ public class DynamicText implements Property {
      * @param   source
      *          Source of the text used in debug command
      */
-    public DynamicText(String name, TabFeature listener, TabPlayer owner, String rawValue, String source) {
+    public DynamicText(String name, Refreshable listener, TabPlayer owner, String rawValue, String source) {
         this.name = name;
         this.listener = listener;
         this.owner = owner;
         this.source = source;
-        this.rawValue = (rawValue == null ? "" : rawValue);
-        analyze(this.rawValue);
+        this.originalRawValue = (rawValue == null ? "" : rawValue);
+        analyze(this.originalRawValue);
     }
 
     /**
@@ -119,8 +120,8 @@ public class DynamicText implements Property {
         }
         lastReplacedValue = rawFormattedValue;
         update();
-        TabExpansion expansion = TAB.getInstance().getPlaceholderManager().getTabExpansion();
-        if (expansion != null && name != null) {
+        if (name != null) {
+            TabExpansion expansion = TAB.getInstance().getPlaceholderManager().getTabExpansion();
             expansion.setPropertyValue(owner, name, lastReplacedValue);
             expansion.setRawPropertyValue(owner, name, getCurrentRawValue());
         }
@@ -136,11 +137,11 @@ public class DynamicText implements Property {
      *          new source of the text
      */
     public void changeRawValue(String newValue, String newSource) {
-        if (rawValue.equals(newValue)) return;
-        rawValue = newValue;
+        if (originalRawValue.equals(newValue)) return;
+        originalRawValue = newValue;
         source = newSource;
         if (temporaryValue == null) {
-            analyze(rawValue);
+            analyze(originalRawValue);
         }
     }
 
@@ -160,25 +161,15 @@ public class DynamicText implements Property {
             analyze(this.temporaryValue);
         } else {
             this.temporaryValue = null;
-            analyze(rawValue);
+            analyze(originalRawValue);
         }
     }
     
     @Override
     public String getCurrentRawValue() {
-        return temporaryValue != null ? temporaryValue : rawValue;
+        return temporaryValue != null ? temporaryValue : originalRawValue;
     }
-    
-    @Override
-    public String getTemporaryValue() {
-        return temporaryValue;
-    }
-    
-    @Override
-    public String getOriginalRawValue() {
-        return rawValue;
-    }
-    
+
     @Override
     public String updateAndGet() {
         update();
@@ -188,7 +179,6 @@ public class DynamicText implements Property {
     @Override
     public boolean update() {
         if (placeholders.length == 0) return false;
-        long time = System.nanoTime();
         String string;
         if ("%s".equals(rawFormattedValue)) {
             string = TAB.getInstance().getPlaceholderManager().getPlaceholder(placeholders[0]).set(placeholders[0], owner);
@@ -202,14 +192,11 @@ public class DynamicText implements Property {
         string = EnumChatFormat.color(string);
         if (!lastReplacedValue.equals(string)) {
             lastReplacedValue = string;
-            TabExpansion expansion = TAB.getInstance().getPlaceholderManager().getTabExpansion();
-            if (expansion != null && name != null) {
-                expansion.setPropertyValue(owner, name, lastReplacedValue);
+            if (name != null) {
+                TAB.getInstance().getPlaceholderManager().getTabExpansion().setPropertyValue(owner, name, lastReplacedValue);
             }
-            TAB.getInstance().getCPUManager().addMethodTime("Property#update", System.nanoTime()-time);
             return true;
         }
-        TAB.getInstance().getCPUManager().addMethodTime("Property#update", System.nanoTime()-time);
         return false;
     }
 
@@ -225,6 +212,6 @@ public class DynamicText implements Property {
             RelationalPlaceholderImpl pl = (RelationalPlaceholderImpl) TAB.getInstance().getPlaceholderManager().getPlaceholder(identifier);
             format = format.replace(pl.getIdentifier(), viewer == null ? "" : pl.getLastValue(viewer, owner));
         }
-        return format;
+        return EnumChatFormat.color(format);
     }
 }

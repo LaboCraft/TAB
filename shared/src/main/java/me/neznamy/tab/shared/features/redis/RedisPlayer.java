@@ -1,45 +1,38 @@
 package me.neznamy.tab.shared.features.redis;
 
-import java.util.Collections;
-import java.util.UUID;
-
-import me.neznamy.tab.api.protocol.Skin;
-import org.json.simple.JSONObject;
-
+import lombok.Getter;
+import lombok.Setter;
+import me.neznamy.tab.api.TabConstants;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.chat.IChatBaseComponent;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardScore;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo.EnumGamemode;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo.EnumPlayerInfoAction;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo.PlayerInfoData;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardScore.Action;
-import me.neznamy.tab.api.protocol.PacketPlayOutScoreboardTeam;
+import me.neznamy.tab.api.tablist.Skin;
+import me.neznamy.tab.api.tablist.TabListEntry;
 import me.neznamy.tab.shared.TAB;
-import me.neznamy.tab.api.TabConstants;
-import me.neznamy.tab.shared.features.BelowName;
-import me.neznamy.tab.shared.features.YellowNumber;
+import org.json.simple.JSONObject;
+
+import java.util.Collections;
+import java.util.UUID;
 
 public class RedisPlayer {
 
     private RedisSupport redis;
-    private boolean disabledPlayerList;
+    @Getter private boolean disabledPlayerList;
     private boolean disabledNameTags;
 
-    private UUID uniqueId;
-    private String name;
-    private String nickname;
-    private String server;
-    private String tabFormat;
-    private String teamName;
-    private boolean vanished;
-    private Skin skin;
-    private String tagPrefix;
-    private String tagSuffix;
-    private boolean nameVisibility;
-    private String belowName;
-    private String yellowNumber;
-    private boolean staff;
+    @Getter private UUID uniqueId;
+    @Getter private String name;
+    @Getter @Setter private String nickname;
+    @Getter private String server;
+    @Getter @Setter private String tabFormat;
+    @Getter private String teamName;
+    @Getter private boolean vanished;
+    @Getter private Skin skin;
+    @Setter @Getter private String tagPrefix;
+    @Setter @Getter private String tagSuffix;
+    @Getter private boolean nameVisibility;
+    @Setter private String belowName;
+    @Setter private String yellowNumber;
+    @Getter private boolean staff;
 
     private RedisPlayer() {
     }
@@ -73,7 +66,7 @@ public class RedisPlayer {
     private static String checkTeamName(RedisSupport redis, String currentName15, int id) {
         String potentialTeamName = currentName15 + (char)id;
         for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
-            if (all.getTeamName() != null && all.getTeamName().equals(potentialTeamName)) {
+            if (redis.getSorting() != null && redis.getSorting().getShortTeamName(all).equals(potentialTeamName)) {
                 return checkTeamName(redis, currentName15, id+1);
             }
         }
@@ -89,7 +82,7 @@ public class RedisPlayer {
     public static JSONObject toJson(RedisSupport redis, TabPlayer p) {
         JSONObject json = new JSONObject();
         json.put("action", "join");
-        json.put("UUID", p.getTablistUUID().toString());
+        json.put("UUID", p.getTablistId().toString());
         json.put("name", p.getName());
         json.put("server", p.getServer());
         if (redis.getPlayerList() != null) {
@@ -110,7 +103,7 @@ public class RedisPlayer {
         if (p.getProperty(TabConstants.Property.YELLOW_NUMBER) != null) {
             json.put("yellow-number", p.getProperty(TabConstants.Property.YELLOW_NUMBER).get());
         }
-        json.put("teamname", p.getTeamName());
+        json.put("teamname", redis.getSorting() == null ? null : redis.getSorting().getShortTeamName(p));
         json.put("vanished", p.isVanished());
         json.put("staff", p.hasPermission(TabConstants.Permission.STAFF));
         if (p.getSkin() != null) {
@@ -120,48 +113,17 @@ public class RedisPlayer {
         return json;
     }
 
-    public PacketPlayOutPlayerInfo getAddPacket() {
-        return new PacketPlayOutPlayerInfo(EnumPlayerInfoAction.ADD_PLAYER, new PlayerInfoData(nickname, uniqueId, skin, 0, EnumGamemode.SURVIVAL,
-                disabledPlayerList ? null : IChatBaseComponent.optimizedComponent(tabFormat), null));
+    public TabListEntry getEntry() {
+        return new TabListEntry(uniqueId, nickname, skin, true, 0, 0,
+                disabledPlayerList ? null : IChatBaseComponent.optimizedComponent(tabFormat), null);
     }
 
-    public PacketPlayOutPlayerInfo getUpdatePacket() {
-        return new PacketPlayOutPlayerInfo(EnumPlayerInfoAction.UPDATE_DISPLAY_NAME, new PlayerInfoData(uniqueId, disabledPlayerList ? null : IChatBaseComponent.optimizedComponent(tabFormat)));
+    public int getBelowName() {
+        return TAB.getInstance().getErrorManager().parseInteger(belowName, 0);
     }
 
-    public PacketPlayOutPlayerInfo getRemovePacket() {
-        PlayerInfoData data = new PlayerInfoData(uniqueId);
-        data.setName(nickname); //making null check not kill own packets
-        return new PacketPlayOutPlayerInfo(EnumPlayerInfoAction.REMOVE_PLAYER, data);
-    }
-
-    public PacketPlayOutScoreboardTeam getRegisterTeamPacket() {
-        if (disabledNameTags) return null;
-        return new PacketPlayOutScoreboardTeam(teamName, tagPrefix, tagSuffix, nameVisibility ? "always" : "never", "always", Collections.singletonList(nickname), 2);
-    }
-
-    public PacketPlayOutScoreboardTeam getUpdateTeamPacket() {
-        if (disabledNameTags) return null;
-        return new PacketPlayOutScoreboardTeam(teamName, tagPrefix, tagSuffix, nameVisibility ? "always" : "never", "always", 2);
-    }
-
-    public PacketPlayOutScoreboardTeam getUnregisterTeamPacket() {
-        if (disabledNameTags) return null;
-        return new PacketPlayOutScoreboardTeam(teamName);
-    }
-
-    public PacketPlayOutScoreboardScore getBelowNameUpdatePacket() {
-        if (belowName == null) return null;
-        return new PacketPlayOutScoreboardScore(Action.CHANGE, BelowName.OBJECTIVE_NAME, nickname, TAB.getInstance().getErrorManager().parseInteger(belowName, 0));
-    }
-
-    public PacketPlayOutScoreboardScore getYellowNumberUpdatePacket() {
-        if (yellowNumber == null) return null;
-        return new PacketPlayOutScoreboardScore(Action.CHANGE, YellowNumber.OBJECTIVE_NAME, nickname, TAB.getInstance().getErrorManager().parseInteger(yellowNumber, 0));
-    }
-
-    public String getServer() {
-        return server;
+    public int getYellowNumber() {
+        return TAB.getInstance().getErrorManager().parseInteger(yellowNumber, 0);
     }
 
     public void setServer(String server) {
@@ -172,7 +134,7 @@ public class RedisPlayer {
                     disabledPlayerList = false;
                     for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
                         if (all.getVersion().getMinorVersion() < 8) continue;
-                        all.sendCustomPacket(getUpdatePacket(), redis);
+                        all.getTabList().updateDisplayName(uniqueId, IChatBaseComponent.optimizedComponent(tabFormat));
                     }
                 }
             } else {
@@ -180,7 +142,7 @@ public class RedisPlayer {
                     disabledPlayerList = true;
                     for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
                         if (all.getVersion().getMinorVersion() < 8) continue;
-                        all.sendCustomPacket(getUpdatePacket(), redis);
+                        all.getTabList().updateDisplayName(uniqueId, null);
                     }
                 }
             }
@@ -190,74 +152,19 @@ public class RedisPlayer {
                 if (!redis.getNameTags().isDisabled(server, null)) {
                     disabledNameTags = false;
                     for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
-                        all.sendCustomPacket(getRegisterTeamPacket(), redis);
+                        all.getScoreboard().registerTeam(teamName, tagPrefix, tagSuffix, nameVisibility ? "always" : "never",
+                                "always", Collections.singletonList(nickname), 2);
                     }
                 }
             } else {
                 if (redis.getNameTags().isDisabled(server, null)) {
                     disabledNameTags = true;
                     for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
-                        all.sendCustomPacket(getUnregisterTeamPacket(), redis);
+                        all.getScoreboard().unregisterTeam(teamName);
                     }
                 }
             }
         }
-    }
-
-    public boolean isVanished() {
-        return vanished;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public String getNickName() {
-        return nickname;
-    }
-
-    public void setNickName(String nickname) {
-        this.nickname = nickname;
-    }
-
-    public String getTabFormat() {
-        return tabFormat;
-    }
-
-    public String getTeamName() {
-        return teamName;
-    }
-
-    public void setTabFormat(String format) {
-        this.tabFormat = format;
-    }
-
-    public void setTagPrefix(String tagprefix) {
-        this.tagPrefix = tagprefix;
-    }
-
-    public void setTagSuffix(String tagsuffix) {
-        this.tagSuffix = tagsuffix;
-    }
-
-    public void setBelowName(String belowname) {
-        this.belowName = belowname;
-    }
-
-    public UUID getUniqueId() {
-        return uniqueId;
-    }
-
-    public void setYellowNumber(String yellowNumber) {
-        this.yellowNumber = yellowNumber;
-    }
-
-    public boolean isStaff() {
-        return staff;
-    }
-
-    public boolean hasDisabledPlayerlist() {
-        return disabledPlayerList;
     }
 
     public void setTeamName(String teamName) {

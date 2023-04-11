@@ -1,18 +1,21 @@
 package me.neznamy.tab.shared.features.layout;
 
-import me.neznamy.tab.api.TabFeature;
-import me.neznamy.tab.api.TabPlayer;
-import me.neznamy.tab.api.protocol.PacketPlayOutPlayerInfo;
-import me.neznamy.tab.shared.TAB;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import me.neznamy.tab.api.TabConstants;
+import me.neznamy.tab.api.feature.Refreshable;
+import me.neznamy.tab.api.feature.TabFeature;
+import me.neznamy.tab.api.TabPlayer;
+import me.neznamy.tab.shared.TAB;
 
-public class LayoutLatencyRefresher extends TabFeature {
+@RequiredArgsConstructor
+public class LayoutLatencyRefresher extends TabFeature implements Refreshable {
 
+    @Getter private final String featureName = "Layout";
+    @Getter private final String refreshDisplayName = "Updating latency";
     private final LayoutManager manager;
 
-    public LayoutLatencyRefresher(LayoutManager manager) {
-        super(manager.getFeatureName(), "Updating latency");
-        this.manager = manager;
+    {
         TAB.getInstance().getPlaceholderManager().addUsedPlaceholder(TabConstants.Placeholder.PING, this);
     }
 
@@ -24,8 +27,7 @@ public class LayoutLatencyRefresher extends TabFeature {
             if (layout == null) continue;
             PlayerSlot slot = layout.getSlot(p);
             if (slot == null) continue;
-            all.sendCustomPacket(new PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.UPDATE_LATENCY,
-                    new PacketPlayOutPlayerInfo.PlayerInfoData(slot.getUUID(), p.getPing())), TabConstants.PacketCategory.LAYOUT_LATENCY);
+            all.getTabList().updateLatency(slot.getUniqueId(), p.getPing());
         }
     }
 }

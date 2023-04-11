@@ -3,13 +3,19 @@ package me.neznamy.tab.shared.features.sorting.types;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 
+import lombok.RequiredArgsConstructor;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.chat.EnumChatFormat;
 import me.neznamy.tab.shared.ITabPlayer;
 import me.neznamy.tab.shared.TAB;
 import me.neznamy.tab.shared.features.sorting.Sorting;
 
+@RequiredArgsConstructor
 public abstract class SortingType {
+
+    protected final Sorting sorting;
+
+    private final String displayName;
 
     //number to add to / subtract from to prevent incorrect sorting with negative values
     protected final int DEFAULT_NUMBER = 5000000;
@@ -17,16 +23,15 @@ public abstract class SortingType {
     //placeholder to sort by, if sorting type uses it
     protected String sortingPlaceholder;
 
-    protected SortingType(){
-    }
-    
     /**
      * Constructs new instance with given parameter
      *
      * @param   sortingPlaceholder
      *          placeholder to sort by
      */
-    protected SortingType(Sorting sorting, String sortingPlaceholder){
+    protected SortingType(Sorting sorting, String displayName, String sortingPlaceholder) {
+        this.sorting = sorting;
+        this.displayName = displayName;
         if (!sortingPlaceholder.startsWith("%") || !sortingPlaceholder.endsWith("%")) {
             TAB.getInstance().getErrorManager().startupWarn("\"" + sortingPlaceholder + "\" is not a valid placeholder for " + this + " sorting type");
         } else {
@@ -47,24 +52,20 @@ public abstract class SortingType {
         return TAB.getInstance().getPlaceholderManager().getPlaceholder(sortingPlaceholder).set(sortingPlaceholder, player);
     }
     
-    protected LinkedHashMap<String, String> convertSortingElements(String[] elements) {
-        LinkedHashMap<String, String> sortedGroups = new LinkedHashMap<>();
+    protected LinkedHashMap<String, Integer> convertSortingElements(String[] elements) {
+        LinkedHashMap<String, Integer> sortedGroups = new LinkedHashMap<>();
         int index = 1;
-        int charCount = String.valueOf(elements.length).length()+1; //1 char for <10 values, 2 chars for <100 etc
-        for (String element : elements){
-            StringBuilder sb = new StringBuilder();
-            sb.append(index);
-            while (sb.length() < charCount) { 
-                sb.insert(0, "0");
-            }
+        for (String element : elements) {
             for (String element0 : element.split("\\|")) {
-                while (element0.startsWith(" ")) element0 = element0.substring(1);
-                while (element0.endsWith(" ")) element0 = element0.substring(0, element0.length()-1);
-                sortedGroups.put(EnumChatFormat.color(element0.toLowerCase()), sb.toString());
+                sortedGroups.put(EnumChatFormat.color(element0.trim().toLowerCase()), index++);
             }
-            index++;
         }
         return sortedGroups;
+    }
+
+    @Override
+    public final String toString() {
+        return displayName;
     }
     
     /**
